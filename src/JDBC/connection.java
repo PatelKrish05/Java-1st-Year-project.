@@ -6,7 +6,7 @@ import java.sql.SQLException;
 
 public class connection {
     static Connection con;
-    protected connection(){
+    public connection(){
         String url = "jdbc:mysql://localhost:3306/yatraverse";
         String username = "root";
         String password = "";
@@ -14,7 +14,7 @@ public class connection {
 
 
         try {
-            con = DriverManager.getConnection(url, username, password);
+             con = DriverManager.getConnection(url, username, password);
         }
         catch (SQLException e) {
             System.out.println("Server Down...");
