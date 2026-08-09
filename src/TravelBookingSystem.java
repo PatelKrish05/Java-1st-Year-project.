@@ -1,29 +1,12 @@
 import JDBC.*;
 import java.io.*;
-import java.sql.*;
-import java.util.*;
-import java.time.*;
+
+
 
 
 
 class TravelBookingSystem extends connection{
 
-    static Scanner sc = new Scanner(System.in);
-    int user_id,admin_id;
-    /*static String url = "jdbc:mysql://localhost:3306/yatraverse";
-    static String dbUsername = "root";
-    static String dbPassword = "";
-    static Connection con;
-
-    static {
-        try {
-            con = DriverManager.getConnection(url, dbUsername, dbPassword);
-        }
-        catch (SQLException e) {
-            System.out.println("Server Down...");
-            System.exit(0);
-        }
-    }*/
     static{
         connection co  = new connection();
     }
@@ -42,7 +25,7 @@ class TravelBookingSystem extends connection{
             br.close();
         }
         catch (IOException e) {
-            System.out.println(e);
+            System.out.println("Ticket restoration Failed");
         }
 
     }
@@ -51,7 +34,6 @@ class TravelBookingSystem extends connection{
 
 
     public static void main(String[] args) throws Exception {
-        TravelBookingSystem tbs = new TravelBookingSystem();
 
 
         while (true) {
