@@ -1,7 +1,10 @@
+package Travel_Booking_System;
+
 import JDBC.*;
+import Admin.*;
 import java.io.*;
 
-class TravelBookingSystem extends connection{
+class Yatraverse extends connection{
 
     static{
         connection co  = new connection();
@@ -36,7 +39,6 @@ class TravelBookingSystem extends connection{
             System.out.println("\n1. Register");
             System.out.println("2. Login");
             System.out.println("3. Exit");
-            System.out.print("Choice: ");
             int choice=new Methods().readValidInt("Enter Choice : ");
 
             switch (choice) {

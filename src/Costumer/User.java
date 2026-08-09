@@ -1,10 +1,15 @@
+package Costumer;
+
 import java.sql.*;
+
+
+import Admin.*;
 import JDBC.connection;
 
 import java.text.SimpleDateFormat;
 import java.util.Scanner;
 
-class User extends connection {
+public class User extends connection {
     static Scanner sc = new Scanner(System.in);
 
     // ================= HELPER INPUT METHODS =================
@@ -471,7 +476,7 @@ class User extends connection {
         int travellers = readValidInt("Enter number of travellers (or 0 to cancel): ");
         if (travellers <= 0) return;
 
-        new Package().view();
+        new Packages().view();
         while (true) {
             int pId = readValidInt("Enter Package Id (or 0 to cancel): ");
             if (pId == 0) return;

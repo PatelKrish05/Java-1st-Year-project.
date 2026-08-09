@@ -1,4 +1,7 @@
+package Admin;
+
 import JDBC.connection;
+import Travel_Booking_System.Methods;
 
 import java.sql.*;
 import java.util.Scanner;

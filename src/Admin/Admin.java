@@ -1,3 +1,7 @@
+package Admin;
+
+import Travel_Booking_System.Methods;
+
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.util.Scanner;
@@ -5,11 +9,11 @@ import java.util.Scanner;
 public class Admin{
     int Adminid;
     Scanner sc = new Scanner(System.in);
-    Admin(int Adminid){
+    public Admin(int Adminid){
         this.Adminid = Adminid;
     }
 
-    void adminPanel() throws Exception{
+    public void adminPanel() throws Exception{
         while (true) {
             System.out.println("\n--- ADMIN PANEL ---");
             System.out.println("1. Manage Flight");
@@ -33,7 +37,7 @@ public class Admin{
                 case 4 -> manager(new Cab());//cab
                 case 5 -> manager(new Hotel());// hotel
                 case 6 -> manager(new Room());// hotel room
-                case 7 -> manager(new Package());//Package
+                case 7 -> manager(new Packages());//Package
                 case 8 -> manager(new Country());//Country
                 case 9 -> manager(new State());//States
                 case 10 -> manager(new City());//Citties

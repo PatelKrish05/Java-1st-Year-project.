@@ -1,3 +1,5 @@
+package Admin;
+
 public interface Manageable {
     void view() throws Exception;
     void add() throws Exception;

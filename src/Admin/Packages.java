@@ -1,3 +1,5 @@
+package Admin;
+
 import JDBC.connection;
 
 import java.sql.*;
@@ -5,7 +7,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Scanner;
 
-class Package extends connection implements Manageable {
+public class Packages extends connection implements Manageable {
     Scanner sc = new Scanner(System.in);
     int choice, pID, hID, roomID;
     long packagePrice;

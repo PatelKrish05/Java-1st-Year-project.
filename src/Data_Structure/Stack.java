@@ -1,15 +1,17 @@
-class Stack
+package Data_Structure;
+
+public class Stack
 {
     static int top;
     int cap;
     /*String temp[];*/
 
-    Stack(int max){
+    public Stack(int max){
         cap = max;
         top = -1;
     }
 
-    void push(String tic, String[] ft)
+    public void push(String tic, String[] ft)
     {
         top++;
         ft[top] = tic;

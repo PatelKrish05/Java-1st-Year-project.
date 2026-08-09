@@ -1,3 +1,5 @@
+package Admin;
+
 import JDBC.connection;
 
 import java.sql.*;
@@ -5,7 +7,7 @@ import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Scanner;
 
-class Hotel extends connection implements Manageable {
+public class Hotel extends connection implements Manageable {
     Scanner sc = new Scanner(System.in);
     int choice, hID;
     String hName, hCity, hType, address, contactNo, email, description, n = "";

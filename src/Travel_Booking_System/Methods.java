@@ -1,18 +1,16 @@
+package Travel_Booking_System;
+
+import Admin.*;
+
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
+import java.util.Scanner;
 
-class node {
-    Object data;
-    node next;
-    node(Object data){
-        this.data=data;
-    }
-
-}
 
 public class Methods extends Flight {
+    Scanner sc = new Scanner(System.in);
     boolean isValidPassword(String password) {
         char[] pas = password.toCharArray();
         int ac=0,aC=0,nC=0,Oc=0;
@@ -233,7 +231,7 @@ public class Methods extends Flight {
 /*
 class CircularLL{
     public static void main(String[] args) {
-        Methods m = new Methods();
+        Travel_Booking_System.Methods m = new Travel_Booking_System.Methods();
         m.insertFirst(2);
         m.insertFirst(1);
         m.insertAfter(2 ,3);

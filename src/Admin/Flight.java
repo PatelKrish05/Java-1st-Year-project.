@@ -1,4 +1,8 @@
+package Admin;
+
 import JDBC.connection;
+import Travel_Booking_System.Methods;
+import Data_Structure.*;
 
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -8,8 +12,9 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Scanner;
 
-public class Flight extends connection implements Manageable{
-    static ArrayList<String[]> f = new ArrayList<>();
+
+public class Flight extends connection implements Manageable {
+    public static ArrayList<String[]> f = new ArrayList<>();
     static Stack st ;
     String from="",to="",f_Type="";
     int choice,fID;

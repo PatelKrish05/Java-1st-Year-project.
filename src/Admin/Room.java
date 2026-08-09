@@ -1,3 +1,5 @@
+package Admin;
+
 import JDBC.connection;
 
 import java.sql.*;
