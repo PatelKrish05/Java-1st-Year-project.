@@ -5,7 +5,7 @@ import java.sql.DriverManager;
 import java.sql.SQLException;
 
 public class connection {
-    static Connection con;
+    protected static Connection con;
     public connection(){
         String url = "jdbc:mysql://localhost:3306/yatraverse";
         String username = "root";
