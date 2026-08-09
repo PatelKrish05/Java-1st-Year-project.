@@ -1,10 +1,6 @@
 import JDBC.*;
 import java.io.*;
 
-
-
-
-
 class TravelBookingSystem extends connection{
 
     static{
