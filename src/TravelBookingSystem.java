@@ -128,7 +128,7 @@ class TravelBookingSystem {
         String u = uTry;
         System.out.println(
                 "Password must be at least 8 characters long and contain at least one uppercase letter, one digit, and one special character (@, $, !, %, , ?, &). ");
-        while (true) {
+        /*while (true) {
             System.out.print("Password: ");
             String p = sc.nextLine();
             boolean checkPass = isValidPassword(p);
@@ -138,7 +138,7 @@ class TravelBookingSystem {
             } else {
                 System.out.println("Enter Valid Password According to Instructions!!!");
             }
-        }
+        }*/
 
         System.out.println("Account Created!");
     }
