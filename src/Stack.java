@@ -1,10 +1,8 @@
-import java.util.*;
-
 class Stack
 {
     static int top;
     int cap;
-    String temp[];
+    /*String temp[];*/
 
     Stack(int max){
         cap = max;
@@ -18,7 +16,7 @@ class Stack
        /* System.out.println("element enter successfully");*/
     }
 
-    String popRemove(String[] a)
+    /*String popRemove(String[] a)
     {
         return a[top--];
     }
@@ -28,7 +26,7 @@ class Stack
         top--;
     }
 
-    /*void display()
+    void display()
     {
         for (int i = top; i >= 0; i--)
         {

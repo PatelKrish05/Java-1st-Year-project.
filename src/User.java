@@ -1,6 +1,6 @@
+import java.sql.*;
 import JDBC.connection;
 
-import java.sql.*;
 import java.text.SimpleDateFormat;
 import java.util.Scanner;
 
@@ -855,7 +855,7 @@ class User extends connection {
 
     void myTrip(int Userid) {
         try {
-            System.out.println("\n================================  MY TRIPS ================================");
+            System.out.println("\n================================ MY TRIPS ================================");
 
             boolean hasPending = false;
 
