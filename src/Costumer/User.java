@@ -1,11 +1,8 @@
 package Costumer;
 
 import java.sql.*;
-
-
 import Admin.*;
 import JDBC.connection;
-
 import java.text.SimpleDateFormat;
 import java.util.Scanner;
 
@@ -55,6 +52,41 @@ public class User extends connection {
         }
     }
 
+    private String getCityInput(String prompt) {
+        while (true) {
+            System.out.print(prompt);
+            String input = sc.nextLine().trim();
+            if (input.isBlank()) return null;
+
+            // If the user enters numbers, treat it as a 6-digit Pincode lookup
+            if (input.matches("\\d+")) {
+                if (!input.matches("\\d{6}")) {
+                    System.out.println("Invalid pincode length! Indian pincodes must be 6 digits (e.g., 380001). Try again.\n");
+                    continue;
+                }
+
+                String pinSql = "SELECT city_name FROM view_pincode_location WHERE pincode = ? LIMIT 1";
+                try (PreparedStatement pst = con.prepareStatement(pinSql)) {
+                    pst.setString(1, input);
+                    ResultSet rs = pst.executeQuery();
+                    if (rs.next()) {
+                        String cityName = rs.getString("city_name");
+                        System.out.println("-> Detected City: " + cityName);
+                        return cityName;
+                    } else {
+                        System.out.println("Pincode not found in database. Please enter a valid Pincode or City Name.\n");
+                        continue;
+                    }
+                } catch (Exception e) {
+                    System.out.println("Error validating pincode: " + e.getMessage());
+                }
+            } else {
+                // Non-numeric input treated as City Name
+                return input;
+            }
+        }
+    }
+
     // ================= USER PANEL MENU =================
 
     public void userPanel(int User_id) throws Exception {
@@ -89,12 +121,65 @@ public class User extends connection {
 
     void fBooking(int userid) throws Exception {
         System.out.println("\n=== FLIGHT BOOKING ===");
-        int tickets = readValidInt("How many tickets do you need? (or 0 to cancel): ");
+        System.out.println("1. Domestic Flight");
+        System.out.println("2. International Flight");
+        System.out.println("3. Back");
+
+        int flightType = readValidInt("Select Flight Type: ");
+        if (flightType == 3 || flightType == 0) return;
+        if (flightType != 1 && flightType != 2) {
+            System.out.println("Invalid selection. Returning to menu.");
+            return;
+        }
+
+        String typeLabel = (flightType == 1) ? "DOMESTIC" : "INTERNATIONAL";
+        System.out.println("\n--- " + typeLabel + " FLIGHT SEARCH ---");
+
+        String from = getCityInput("Enter Departure City / Pincode (From): ");
+        if (from == null) return;
+
+        String to;
+        if (flightType == 1) {
+            to = getCityInput("Enter Destination City / Pincode (To): ");
+        } else {
+            System.out.print("Enter Destination City / Country (To): ");
+            to = sc.nextLine().trim();
+        }
+        if (to == null || to.isBlank()) return;
+
+        if (from.equalsIgnoreCase(to)) {
+            System.out.println("\nError: Departure and Destination cannot be the same (" + from + ")!");
+            return;
+        }
+
+        String sql = "SELECT * FROM `flights` WHERE LOWER(F_From) LIKE LOWER(?) AND LOWER(F_To) LIKE LOWER(?) AND Available_Tickets > 0";
+        PreparedStatement searchSt = con.prepareStatement(sql);
+        searchSt.setString(1, "%" + from + "%");
+        searchSt.setString(2, "%" + to + "%");
+        ResultSet searchRs = searchSt.executeQuery();
+
+        System.out.println("\n--- AVAILABLE " + typeLabel + " FLIGHTS (" + from.toUpperCase() + " -> " + to.toUpperCase() + ") ---");
+        boolean found = false;
+        while (searchRs.next()) {
+            found = true;
+            System.out.printf("Flight ID: %-5d | From: %-15s -> To: %-15s | Price: $%-8.2f | Available: %d%n",
+                    searchRs.getInt("Flight_id"),
+                    searchRs.getString("F_From"),
+                    searchRs.getString("F_To"),
+                    searchRs.getDouble("price"),
+                    searchRs.getInt("Available_Tickets"));
+        }
+
+        if (!found) {
+            System.out.println("No " + typeLabel.toLowerCase() + " flights available for route: " + from + " -> " + to);
+            return;
+        }
+
+        int tickets = readValidInt("\nHow many tickets do you need? (or 0 to cancel): ");
         if (tickets <= 0) return;
 
-        new Flight().view();
         while (true) {
-            int fId = readValidInt("Enter Flight Id (or 0 to cancel): ");
+            int fId = readValidInt("Enter Flight Id to book (or 0 to cancel): ");
             if (fId == 0) return;
 
             PreparedStatement st = con.prepareStatement("SELECT Available_Tickets FROM `flights` WHERE Flight_id = ?");
@@ -170,12 +255,46 @@ public class User extends connection {
 
     void tBooking(int userid) throws Exception {
         System.out.println("\n=== TRAIN BOOKING ===");
-        int tickets = readValidInt("How many tickets do you need? (or 0 to cancel): ");
+
+        String from = getCityInput("Enter Departure City / Pincode (From): ");
+        if (from == null) return;
+
+        String to = getCityInput("Enter Destination City / Pincode (To): ");
+        if (to == null) return;
+
+        if (from.equalsIgnoreCase(to)) {
+            System.out.println("\nError: Departure and Destination cannot be the same (" + from + ")!");
+            return;
+        }
+
+        PreparedStatement searchSt = con.prepareStatement(
+                "SELECT * FROM `trains` WHERE LOWER(T_From) LIKE LOWER(?) AND LOWER(T_To) LIKE LOWER(?) AND Available_Tickets > 0");
+        searchSt.setString(1, "%" + from + "%");
+        searchSt.setString(2, "%" + to + "%");
+        ResultSet searchRs = searchSt.executeQuery();
+
+        System.out.println("\n--- AVAILABLE TRAINS (" + from.toUpperCase() + " -> " + to.toUpperCase() + ") ---");
+        boolean found = false;
+        while (searchRs.next()) {
+            found = true;
+            System.out.printf("Train ID: %-5d | From: %-15s -> To: %-15s | Price: $%-8.2f | Available: %d%n",
+                    searchRs.getInt("train_id"),
+                    searchRs.getString("T_From"),
+                    searchRs.getString("T_To"),
+                    searchRs.getDouble("price"),
+                    searchRs.getInt("Available_Tickets"));
+        }
+
+        if (!found) {
+            System.out.println("No trains available for route: " + from + " -> " + to);
+            return;
+        }
+
+        int tickets = readValidInt("\nHow many tickets do you need? (or 0 to cancel): ");
         if (tickets <= 0) return;
 
-        new Train().view();
         while (true) {
-            int tId = readValidInt("Enter Train Id (or 0 to cancel): ");
+            int tId = readValidInt("Enter Train Id to book (or 0 to cancel): ");
             if (tId == 0) return;
 
             PreparedStatement st = con.prepareStatement("SELECT Available_Tickets FROM `trains` WHERE train_id = ?");
@@ -250,12 +369,46 @@ public class User extends connection {
 
     void bBooking(int userid) throws Exception {
         System.out.println("\n=== BUS BOOKING ===");
-        int tickets = readValidInt("How many tickets do you need? (or 0 to cancel): ");
+
+        String from = getCityInput("Enter Departure City / Pincode (From): ");
+        if (from == null) return;
+
+        String to = getCityInput("Enter Destination City / Pincode (To): ");
+        if (to == null) return;
+
+        if (from.equalsIgnoreCase(to)) {
+            System.out.println("\nError: Departure and Destination cannot be the same (" + from + ")!");
+            return;
+        }
+
+        PreparedStatement searchSt = con.prepareStatement(
+                "SELECT * FROM `buses` WHERE LOWER(B_From) LIKE LOWER(?) AND LOWER(B_To) LIKE LOWER(?) AND Available_Tickets > 0");
+        searchSt.setString(1, "%" + from + "%");
+        searchSt.setString(2, "%" + to + "%");
+        ResultSet searchRs = searchSt.executeQuery();
+
+        System.out.println("\n--- AVAILABLE BUSES (" + from.toUpperCase() + " -> " + to.toUpperCase() + ") ---");
+        boolean found = false;
+        while (searchRs.next()) {
+            found = true;
+            System.out.printf("Bus ID: %-5d | From: %-15s -> To: %-15s | Price: $%-8.2f | Available: %d%n",
+                    searchRs.getInt("bus_id"),
+                    searchRs.getString("B_From"),
+                    searchRs.getString("B_To"),
+                    searchRs.getDouble("price"),
+                    searchRs.getInt("Available_Tickets"));
+        }
+
+        if (!found) {
+            System.out.println("No buses available for route: " + from + " -> " + to);
+            return;
+        }
+
+        int tickets = readValidInt("\nHow many tickets do you need? (or 0 to cancel): ");
         if (tickets <= 0) return;
 
-        new Bus().view();
         while (true) {
-            int bId = readValidInt("Enter Bus Id (or 0 to cancel): ");
+            int bId = readValidInt("Enter Bus Id to book (or 0 to cancel): ");
             if (bId == 0) return;
 
             PreparedStatement st = con.prepareStatement("SELECT Available_Tickets FROM `buses` WHERE bus_id = ?");
@@ -336,9 +489,35 @@ public class User extends connection {
             return;
         }
 
-        new Hotel().view();
+        String searchCity = getCityInput("Enter City Name / Pincode to search hotels: ");
+        if (searchCity == null) return;
+
+        String hotelSql = "SELECT h.hotel_id, h.hotel_name, c.city_name, h.hotel_type, h.rating " +
+                "FROM hotels h JOIN cities c ON h.city_id = c.city_id " +
+                "WHERE LOWER(c.city_name) LIKE LOWER(?) ORDER BY h.hotel_id";
+        PreparedStatement hPst = con.prepareStatement(hotelSql);
+        hPst.setString(1, "%" + searchCity + "%");
+        ResultSet hRs = hPst.executeQuery();
+
+        System.out.println("\n--- HOTELS IN " + searchCity.toUpperCase() + " ---");
+        boolean foundHotels = false;
+        while (hRs.next()) {
+            foundHotels = true;
+            System.out.printf("ID: %-4d | Name: %-20s | City: %-15s | Type: %-10s | Rating: %.1f%n",
+                    hRs.getInt("hotel_id"),
+                    hRs.getString("hotel_name"),
+                    hRs.getString("city_name"),
+                    hRs.getString("hotel_type"),
+                    hRs.getDouble("rating"));
+        }
+
+        if (!foundHotels) {
+            System.out.println("No hotels found in " + searchCity + ".");
+            return;
+        }
+
         while (true) {
-            int hId = readValidInt("Enter Hotel Id (or 0 to cancel): ");
+            int hId = readValidInt("\nEnter Hotel Id (or 0 to cancel): ");
             if (hId == 0) return;
 
             PreparedStatement st = con.prepareStatement("SELECT hotel_name FROM `hotels` WHERE hotel_id = ?");
@@ -368,8 +547,8 @@ public class User extends connection {
                 System.out.println(
                         rsRooms.getInt("room_id") + "\t" +
                                 rsRooms.getString("room_type") + "\t\t" +
-                                rsRooms.getInt("max_persons") + "\t\t" +
-                                rsRooms.getInt("price_per_night") + "\t\t" +
+                                rsRooms.getInt("max_persons") + "\t\t$" +
+                                rsRooms.getBigDecimal("price_per_night") + "\t\t" +
                                 rsRooms.getInt("available_rooms")
                 );
             }
@@ -476,7 +655,7 @@ public class User extends connection {
         int travellers = readValidInt("Enter number of travellers (or 0 to cancel): ");
         if (travellers <= 0) return;
 
-        new Packages().view();
+        new HolidayPackage().view();
         while (true) {
             int pId = readValidInt("Enter Package Id (or 0 to cancel): ");
             if (pId == 0) return;
@@ -864,7 +1043,7 @@ public class User extends connection {
 
             boolean hasPending = false;
 
-            // 1. Flights (Uses LEFT JOIN to keep receipts visible if admin deletes flight)
+            // 1. Flights
             PreparedStatement fb = con.prepareStatement(
                     "SELECT fb.booking_id, COALESCE(f.F_From, 'N/A') AS F_From, COALESCE(f.F_To, 'N/A') AS F_To, " +
                             "fb.f_tickets, fb.nCab, fb.status, fb.alert_note " +
@@ -956,23 +1135,22 @@ public class User extends connection {
     private void confirmAndPay(int userId) throws Exception {
         System.out.println("\n=== CONFIRMATION & PAYMENT ===");
 
-        // 1. Calculate Total Amount for PENDING Items
         double totalAmount = 0.0;
 
         PreparedStatement pf = con.prepareStatement(
-                "SELECT SUM(fb.f_tickets * f.Prize) AS total FROM flight_booking fb JOIN flights f ON fb.flight_id = f.Flight_id WHERE fb.user_id = ? AND fb.status = 'PENDING'");
+                "SELECT SUM(fb.f_tickets * f.price) AS total FROM flight_booking fb JOIN flights f ON fb.flight_id = f.Flight_id WHERE fb.user_id = ? AND fb.status = 'PENDING'");
         pf.setInt(1, userId);
         ResultSet rsF = pf.executeQuery();
         if (rsF.next()) totalAmount += rsF.getDouble("total");
 
         PreparedStatement pt = con.prepareStatement(
-                "SELECT SUM(tb.t_tickets * t.Prize) AS total FROM train_booking tb JOIN trains t ON tb.train_id = t.train_id WHERE tb.user_id = ? AND tb.status = 'PENDING'");
+                "SELECT SUM(tb.t_tickets * t.price) AS total FROM train_booking tb JOIN trains t ON tb.train_id = t.train_id WHERE tb.user_id = ? AND tb.status = 'PENDING'");
         pt.setInt(1, userId);
         ResultSet rsT = pt.executeQuery();
         if (rsT.next()) totalAmount += rsT.getDouble("total");
 
         PreparedStatement pb = con.prepareStatement(
-                "SELECT SUM(bb.b_tickets * b.Prize) AS total FROM bus_booking bb JOIN buses b ON bb.bus_id = b.bus_id WHERE bb.user_id = ? AND bb.status = 'PENDING'");
+                "SELECT SUM(bb.b_tickets * b.price) AS total FROM bus_booking bb JOIN buses b ON bb.bus_id = b.bus_id WHERE bb.user_id = ? AND bb.status = 'PENDING'");
         pb.setInt(1, userId);
         ResultSet rsB = pb.executeQuery();
         if (rsB.next()) totalAmount += rsB.getDouble("total");
@@ -1014,8 +1192,7 @@ public class User extends connection {
         try {
             con.setAutoCommit(false);
 
-            // 2. Insert Master Record into `bookings` and capture Auto-Generated Invoice ID
-            String insertMaster = "INSERT INTO `bookings` (`user_id`, `Payment Type`, `total_amount`) VALUES (?, ?, ?)";
+            String insertMaster = "INSERT INTO `bookings` (`user_id`, `Payment Type`, `booking_total_amount`) VALUES (?, ?, ?)";
             PreparedStatement bSt = con.prepareStatement(insertMaster, Statement.RETURN_GENERATED_KEYS);
             bSt.setInt(1, userId);
             bSt.setString(2, payType);
@@ -1028,7 +1205,6 @@ public class User extends connection {
                 masterBookingId = generatedKeys.getInt(1);
             }
 
-            // 3. Confirm Sub-Bookings and link to Master Payment Record
             PreparedStatement u1 = con.prepareStatement("UPDATE flight_booking SET status = 'CONFIRMED', master_booking_id = ? WHERE user_id = ? AND status = 'PENDING'");
             u1.setInt(1, masterBookingId); u1.setInt(2, userId); u1.executeUpdate();
 

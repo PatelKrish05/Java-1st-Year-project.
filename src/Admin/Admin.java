@@ -26,7 +26,8 @@ public class Admin{
             System.out.println("8. Manage Country");
             System.out.println("9. Manage State");
             System.out.println("10. Manage City");
-            System.out.println("11. Back");
+            System.out.println("11. Reports");
+            System.out.println("12. Back");
             System.out.print("Choice: ");
 
             int choice = new Methods().readValidInt("Enter Choice : ");
@@ -37,11 +38,12 @@ public class Admin{
                 case 4 -> manager(new Cab());//cab
                 case 5 -> manager(new Hotel());// hotel
                 case 6 -> manager(new Room());// hotel room
-                case 7 -> manager(new Packages());//Package
+                case 7 -> manager(new HolidayPackage());//Package
                 case 8 -> manager(new Country());//Country
                 case 9 -> manager(new State());//States
                 case 10 -> manager(new City());//Citties
-                case 11 -> {return;}
+                case 11 -> new ReportService().showReportMenu();//reports
+                case 12 -> {return;}
                 default -> System.out.println("Invalid Choice.");
             }
         }

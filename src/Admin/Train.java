@@ -9,9 +9,64 @@ import java.time.format.DateTimeFormatter;
 import java.util.Scanner;
 
 public class Train extends connection implements Manageable {
-    String from="",to="",t_Type="";
+    String from = "", to = "", t_Type = "";
     int choice, tID;
     Scanner sc = new Scanner(System.in);
+
+    // Helper method to resolve City Name or Pincode
+    private String resolveCityInput(String prompt) throws Exception {
+        while (true) {
+            System.out.print(prompt);
+            String input = sc.nextLine().trim();
+            if (input.isBlank()) return null;
+
+            // Pincode Lookup
+            if (input.matches("\\d+")) {
+                if (!input.matches("\\d{6}")) {
+                    System.out.println("Invalid pincode length! Pincodes must be 6 digits. Try again.\n");
+                    continue;
+                }
+                String pinSql = "SELECT city_name FROM view_pincode_location WHERE pincode = ? LIMIT 1";
+                try (PreparedStatement pst = con.prepareStatement(pinSql)) {
+                    pst.setString(1, input);
+                    ResultSet rs = pst.executeQuery();
+                    if (rs.next()) {
+                        String cityName = rs.getString("city_name");
+                        System.out.println("-> Detected City: " + cityName);
+                        return cityName;
+                    } else {
+                        System.out.println("Pincode not found in database. Please enter a valid Pincode or City Name.\n");
+                        continue;
+                    }
+                }
+            }
+
+            // City Name Check
+            String citySql = "SELECT city_name FROM cities WHERE LOWER(city_name) = LOWER(?) LIMIT 1";
+            try (PreparedStatement pst = con.prepareStatement(citySql)) {
+                pst.setString(1, input);
+                ResultSet rs = pst.executeQuery();
+                if (rs.next()) {
+                    return rs.getString("city_name");
+                } else {
+                    String vSql = "SELECT city_name FROM view_pincode_location WHERE LOWER(city_name) = LOWER(?) LIMIT 1";
+                    try (PreparedStatement vPst = con.prepareStatement(vSql)) {
+                        vPst.setString(1, input);
+                        ResultSet vRs = vPst.executeQuery();
+                        if (vRs.next()) {
+                            return vRs.getString("city_name");
+                        }
+                    }
+
+                    System.out.println("City '" + input + "' not found in database.");
+                    System.out.println("1. Use typed name anyway");
+                    System.out.println("2. Try another City");
+                    int opt = new Methods().readValidInt("Choice: ");
+                    if (opt == 1) return input;
+                }
+            }
+        }
+    }
 
     @Override
     public void view() throws Exception {
@@ -20,18 +75,18 @@ public class Train extends connection implements Manageable {
         ResultSet rs = st.executeQuery(sql);
 
         System.out.println("-------------------------------------------------------------------------------------------------------------------------------------");
-        System.out.println("ID\tFrom\tTo\tType\tPrice\tDeparture\t\tJourney Time(in hours)\tStation\t\tPlatform\tTickets");
+        System.out.println("ID\tFrom\t\tTo\t\tType\t\tPrice\tDeparture\t\tJourney Time(in hours)\tStation\t\tPlatform\tTickets");
         System.out.println("-------------------------------------------------------------------------------------------------------------------------------------");
 
         while (rs.next()) {
             System.out.println(
                     rs.getInt(1) + "\t" +
-                            rs.getString(2) + "\t" +
-                            rs.getString(3) + "\t" +
-                            rs.getString(4) + "\t" +
+                            rs.getString(2) + "\t\t" +
+                            rs.getString(3) + "\t\t" +
+                            rs.getString(4) + "\t\t" +
                             rs.getInt(5) + "\t" +
                             rs.getTimestamp(6) + "\t" +
-                            rs.getInt(7) + "\t" +
+                            rs.getFloat(7) + "\t\t" +
                             rs.getString(8) + "\t\t" +
                             rs.getInt(9) + "\t\t" +
                             rs.getInt(10));
@@ -45,7 +100,7 @@ public class Train extends connection implements Manageable {
     @Override
     public void add() throws Exception {
         while (true) {
-            System.out.println("Train type :-");
+            System.out.println("\nTrain type :-");
             System.out.println("1. Intercity");
             System.out.println("2. Interstate");
             System.out.println("3. Back");
@@ -58,170 +113,118 @@ public class Train extends connection implements Manageable {
                 System.out.println("Invalid Choice");
             }
         }
-//Intercity
+
+        if (choice == 3) return;
+
+        // 1. Intercity
         if (choice == 1) {
-            t_Type="Intercity";
-            Statement st = con.createStatement();
-            String t_From,t_To;
+            t_Type = "Intercity";
             while (true) {
-                System.out.print("From : ");
-                t_From = sc.nextLine();
-                String fSql = "SELECT * FROM CITIES WHERE CITY_NAME = '" + t_From + "'";
-                ResultSet Frs = st.executeQuery(fSql);
-                if (!Frs.next()) {
-                    System.out.println("City Not Available");
-                    System.out.println("1. Add City to Database");
-                    System.out.println("2. Try Another");
+                from = resolveCityInput("From (City / Pincode) : ");
+                if (from == null) return;
 
-                    choice = new Methods().readValidInt("Choice: ");
+                to = resolveCityInput("To (City / Pincode) : ");
+                if (to == null) return;
 
-                    switch (choice) {
-                        case 1 -> new City().add();
-                        case 2 -> {
-                            continue;
-                        }
-                        default -> System.out.println("Invalid Choice");
-                    }
+                if (from.equalsIgnoreCase(to)) {
+                    System.out.println("From and To cities cannot be the same!");
+                    continue;
                 }
-                else {
-                    from=t_From;
-                    break;
-                }
-            }
-            while (true) {
-                System.out.print("To : ");
-                t_To = sc.nextLine();
-                String tSql = "SELECT * FROM CITIES WHERE CITY_NAME = '"+t_To+"'";
-                ResultSet Trs = st.executeQuery(tSql);
-                if (!Trs.next()) {
-                    System.out.println("City Not Available");
-                    System.out.println("1. Add City to Database");
-                    System.out.println("2. Try Another");
-
-                    choice = new Methods().readValidInt("Choice: ");
-
-                    switch (choice) {
-                        case 1 -> new City().add();
-                        case 2 -> {continue;}
-                        default -> System.out.println("Invalid Choice");
-                    }
-                }
-                else if (t_From.toLowerCase().equals(t_To.toLowerCase())){
-                    System.out.println("From and To Can't be same");
-                }
-                else {
-                    to=t_To;
-                    break;
-                }
+                break;
             }
         }
 
-//Interstate
+        // 2. Interstate
         else if (choice == 2) {
-            t_Type="Interstate";
-            String t_CFrom,t_SFrom,t_CTo="",t_STo="";
-            Statement st = con.createStatement();
+            t_Type = "Interstate";
+            String t_CFrom, t_SFrom, t_CTo, t_STo;
 
             while (true) {
-                System.out.println("From :-");
+                System.out.println("\nFrom :-");
                 System.out.print("State : ");
-                t_SFrom = sc.nextLine();
-                System.out.print("City : ");
-                t_CFrom = sc.nextLine();
-                String fSql = "SELECT * FROM STATES JOIN CiTIES ON STATES.STATE_ID=CITIES.STATE_ID WHERE STATE_NAME = '" + t_SFrom + "' AND CITY_NAME='" + t_CFrom + "'";
-                ResultSet Frs = st.executeQuery(fSql);
-                if (!Frs.next()) {
-                    System.out.println("Invalid City or State");
-                }
-                else {
-                    from=t_SFrom+","+t_CFrom;
+                t_SFrom = sc.nextLine().trim();
+                System.out.print("City / Pincode : ");
+                t_CFrom = resolveCityInput("City : ");
+                if (t_CFrom == null) return;
+
+                if (!t_SFrom.isBlank()) {
+                    from = t_SFrom + ", " + t_CFrom;
                     break;
                 }
+                System.out.println("State cannot be empty.");
             }
 
             while (true) {
-                System.out.println("To :-");
+                System.out.println("\nTo :-");
                 System.out.print("State : ");
-                t_SFrom = sc.nextLine();
-                System.out.print("City : ");
-                t_CFrom = sc.nextLine();
-                String tSql = "SELECT * FROM STATES JOIN CiTIES ON STATES.STATE_ID=CITIES.STATE_ID WHERE STATE_NAME = '" + t_SFrom + "' AND CITY_NAME='" + t_CFrom + "'";
-                ResultSet Trs = st.executeQuery(tSql);
-                if (Trs.next()) {
-                    to = t_STo+","+t_CTo;
-                    if(from.equalsIgnoreCase(to)){
-                        System.out.println("From and To Can't be same");
+                t_STo = sc.nextLine().trim();
+                System.out.print("City / Pincode : ");
+                t_CTo = resolveCityInput("City : ");
+                if (t_CTo == null) return;
+
+                if (!t_STo.isBlank()) {
+                    to = t_STo + ", " + t_CTo;
+                    if (from.equalsIgnoreCase(to)) {
+                        System.out.println("From and To locations cannot be the same!");
                         continue;
                     }
                     break;
                 }
-                else {
-                    System.out.println("Invalid City or State");
-                }
+                System.out.println("State cannot be empty.");
             }
-        }
-        else if (choice == 3) {
-            return;
         }
 
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd-MM-yyyy HH:mm");
-
         LocalDateTime departure;
 
         while (true) {
             System.out.print("Date of Train Departure (dd-MM-yyyy): ");
-            String date= sc.nextLine();
+            String date = sc.nextLine().trim();
 
             System.out.print("Time of Train Departure (HH:mm): ");
-            String time = sc.nextLine();
+            String time = sc.nextLine().trim();
 
-            String input = date + " " + time;
             try {
-                departure = LocalDateTime.parse(input, formatter);
-            }
-            catch (Exception e){
-                System.out.println("Invalid Input");
-                continue;
-            }
-
-            if (departure.isAfter(LocalDateTime.now())) {
-                break;
-            }
-            else {
-                System.out.println("Boarding date and time must be after the current date and time.");
+                departure = LocalDateTime.parse(date + " " + time, formatter);
+                if (departure.isAfter(LocalDateTime.now())) {
+                    break;
+                } else {
+                    System.out.println("Boarding date and time must be after the current date and time.");
+                }
+            } catch (Exception e) {
+                System.out.println("Invalid Input Format! Use dd-MM-yyyy HH:mm.");
             }
         }
 
-        int prize = new Methods().readValidInt("Prize : ");
+        int price = new Methods().readValidInt("Price : ");
 
         System.out.print("Journey_Time(in hours) : ");
         float jTime = sc.nextFloat();
         sc.nextLine();
 
         System.out.print("Station Name :");
-        String sName = sc.nextLine();
+        String sName = sc.nextLine().trim();
 
         int pn = new Methods().readValidInt("Platform Number : ");
 
         int tickets = new Methods().readValidInt("Available Tickets : ");
 
-        String sql = "INSERT INTO TRAINS (`T_From`, `T_To`, `T_Type`, `Prize`, `Departure_Time`, " +
+        String sql = "INSERT INTO TRAINS (`T_From`, `T_To`, `T_Type`, `price`, `Departure_Time`, " +
                 "`Journey_Time(in hours)`, `Station_Name`, `Platform_Number`, `Available_Tickets`) " +
                 "VALUES (?,?,?,?,?,?,?,?,?);";
         PreparedStatement pt = con.prepareStatement(sql);
-        pt.setString(1,from);
-        pt.setString(2,to);
-        pt.setString(3,t_Type);
-        pt.setInt(4,prize);
-        pt.setObject(5,departure);
-        pt.setFloat(6,jTime);
-        pt.setString(7,sName);
-        pt.setInt(8,pn);
-        pt.setInt(9,tickets);
+        pt.setString(1, from);
+        pt.setString(2, to);
+        pt.setString(3, t_Type);
+        pt.setInt(4, price);
+        pt.setObject(5, departure);
+        pt.setFloat(6, jTime);
+        pt.setString(7, sName);
+        pt.setInt(8, pn);
+        pt.setInt(9, tickets);
 
         int r = pt.executeUpdate();
-        System.out.println(r!=0?"Train Added":"Failed");
-
+        System.out.println(r != 0 ? "Train Added Successfully!" : "Failed to Add Train");
     }
 
     @Override
@@ -230,17 +233,19 @@ public class Train extends connection implements Manageable {
         while (true) {
             tID = new Methods().readValidInt("Enter Train ID : ");
 
-            String sql = "SELECT `train_id`, `Prize`, `Departure_Time`, `Station_Name`, `Platform_Number`, `Available_Tickets` FROM TRAINS WHERE TRAIN_ID = " + tID;
+            String sql = "SELECT `train_id`, `price`, `Departure_Time`, `Station_Name`, `Platform_Number`, `Available_Tickets` FROM TRAINS WHERE TRAIN_ID = ?";
             PreparedStatement pst = con.prepareStatement(sql);
+            pst.setInt(1, tID);
             ResultSet rs = pst.executeQuery();
             ResultSetMetaData rsm = rs.getMetaData();
+
             if (rs.next()) {
-                System.out.println("ID : "+rs.getInt(1));
-                System.out.println("1."+rsm.getColumnName(2)+" = "+rs.getInt(2));
-                System.out.println("2."+rsm.getColumnName(3)+" = "+rs.getTimestamp(3));
-                System.out.println("3."+rsm.getColumnName(4)+" = "+rs.getString(4));
-                System.out.println("4."+rsm.getColumnName(5)+" = "+rs.getInt(5));
-                System.out.println("5."+rsm.getColumnName(6)+" = "+rs.getInt(6));
+                System.out.println("ID : " + rs.getInt(1));
+                System.out.println("1. " + rsm.getColumnName(2) + " = " + rs.getInt(2));
+                System.out.println("2. " + rsm.getColumnName(3) + " = " + rs.getTimestamp(3));
+                System.out.println("3. " + rsm.getColumnName(4) + " = " + rs.getString(4));
+                System.out.println("4. " + rsm.getColumnName(5) + " = " + rs.getInt(5));
+                System.out.println("5. " + rsm.getColumnName(6) + " = " + rs.getInt(6));
 
                 while (true) {
                     choice = new Methods().readValidInt("Enter Column number to edit : ");
@@ -250,31 +255,27 @@ public class Train extends connection implements Manageable {
 
                     switch (choice) {
                         case 1 -> {
-                            int p = new Methods().readValidInt("New Prize : ");
+                            int p = new Methods().readValidInt("New Price : ");
                             n = "" + p;
                             col = 2;
                         }
                         case 2 -> {
                             DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd-MM-yyyy HH:mm");
-                            String input;
                             LocalDateTime departure;
 
                             while (true) {
                                 System.out.print("Date of Train Departure (dd-MM-yyyy): ");
-                                String date = sc.nextLine();
+                                String date = sc.nextLine().trim();
 
                                 System.out.print("Time of Train Departure (HH:mm): ");
-                                String time = sc.nextLine();
+                                String time = sc.nextLine().trim();
 
-                                input = date + " " + time;
                                 try {
-                                    departure = LocalDateTime.parse(input, formatter);
+                                    departure = LocalDateTime.parse(date + " " + time, formatter);
+                                    break;
+                                } catch (Exception e) {
+                                    System.out.println("Invalid Input Format");
                                 }
-                                catch (Exception e) {
-                                    System.out.println("Invalid Input");
-                                    continue;
-                                }
-                                break;
                             }
 
                             n = departure.toString();
@@ -282,8 +283,7 @@ public class Train extends connection implements Manageable {
                         }
                         case 3 -> {
                             System.out.print("New Station Name : ");
-                            String nS = sc.nextLine();
-                            n = nS;
+                            n = sc.nextLine().trim();
                             col = 4;
                         }
                         case 4 -> {
@@ -301,20 +301,22 @@ public class Train extends connection implements Manageable {
                             continue;
                         }
                     }
-                    String fSql = "UPDATE `TRAINS` SET `" + rsm.getColumnName(col) + "` = '" + n + "' WHERE TRAIN_ID = " + tID;
-                    Statement st = con.createStatement();
+
+                    String fSql = "UPDATE `TRAINS` SET `" + rsm.getColumnName(col) + "` = ? WHERE TRAIN_ID = ?";
+                    PreparedStatement uSt = con.prepareStatement(fSql);
+                    uSt.setString(1, n);
+                    uSt.setInt(2, tID);
+
                     try {
-                        int frs = st.executeUpdate(fSql);
+                        uSt.executeUpdate();
                         System.out.println("Train Details Updated.");
                         break;
-                    }
-                    catch (SQLException e) {
+                    } catch (SQLException e) {
                         System.out.println(e.getMessage());
                     }
                 }
                 break;
-            }
-            else {
+            } else {
                 System.out.println("Invalid Train Id");
             }
         }
@@ -327,28 +329,26 @@ public class Train extends connection implements Manageable {
             int tId = new Methods().readValidInt("Enter Train Id to Delete (or 0 to cancel): ");
             if (tId == 0) return;
 
-            String checkSql = "SELECT * FROM `trains` WHERE train_id = " + tId;
-            Statement checkSt = con.createStatement();
-            ResultSet checkRs = checkSt.executeQuery(checkSql);
+            String checkSql = "SELECT * FROM `trains` WHERE train_id = ?";
+            PreparedStatement checkSt = con.prepareStatement(checkSql);
+            checkSt.setInt(1, tId);
+            ResultSet checkRs = checkSt.executeQuery();
 
             if (checkRs.next()) {
                 boolean autoCommitState = con.getAutoCommit();
                 try {
                     con.setAutoCommit(false);
 
-                    // 1. Mark user bookings as CANCELED and unlink train_id reference
                     PreparedStatement cancelBookings = con.prepareStatement(
                             "UPDATE train_booking SET status = 'CANCELED', train_id = NULL WHERE train_id = ?"
                     );
                     cancelBookings.setInt(1, tId);
                     int affectedUsers = cancelBookings.executeUpdate();
 
-                    // 2. Delete associated cabs
                     PreparedStatement delCabs = con.prepareStatement("DELETE FROM cabs WHERE T_ID = ?");
                     delCabs.setInt(1, tId);
                     delCabs.executeUpdate();
 
-                    // 3. Delete the train record
                     PreparedStatement delTrain = con.prepareStatement("DELETE FROM `trains` WHERE train_id = ?");
                     delTrain.setInt(1, tId);
                     int r = delTrain.executeUpdate();
