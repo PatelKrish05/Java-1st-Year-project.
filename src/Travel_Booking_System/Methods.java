@@ -226,6 +226,24 @@ public class Methods extends Flight {
             }
         }
     }
+
+    public float readValidFloat(String message) {
+        while (true) {
+            System.out.print(message);
+            String input = sc.nextLine().trim();
+            if (input.isBlank()) return 0.0f;
+            try {
+                float val = Float.parseFloat(input);
+                if (val < 0.0f) {
+                    System.out.println("Value cannot be negative.");
+                    continue;
+                }
+                return val;
+            } catch (NumberFormatException e) {
+                System.out.println("Invalid input! Please enter a valid decimal number (e.g., 2.5).");
+            }
+        }
+    }
 }
 
 /*

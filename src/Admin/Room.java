@@ -3,6 +3,8 @@ package Admin;
 import JDBC.connection;
 import Travel_Booking_System.Methods;
 
+import java.io.BufferedReader;
+import java.io.FileReader;
 import java.sql.*;
 import java.math.BigDecimal;
 import java.util.Scanner;
@@ -207,6 +209,23 @@ public class Room extends connection implements Manageable {
 
     @Override
     public void add() throws Exception {
+        System.out.println("\n--- ADD ROOM ---");
+        System.out.println("1. Single Manual Entry");
+        System.out.println("2. Bulk Upload via CSV File");
+        System.out.println("3. Back");
+
+        int mode = new Methods().readValidInt("Choice: ");
+        if (mode == 2) {
+            uploadRoomFile();
+            return;
+        } else if (mode == 3 || mode == 0) {
+            return;
+        } else if (mode != 1) {
+            System.out.println("Invalid Choice.");
+            return;
+        }
+
+        // Manual Entry
         new Hotel().view();
         hID = readHotelId();
         if (hID == 0) return;
@@ -227,6 +246,82 @@ public class Room extends connection implements Manageable {
         pst.setBigDecimal(6, pricePerNight);
         int rs = pst.executeUpdate();
         System.out.println(rs > 0 ? "Room Added Successfully!" : "Failed to add Room");
+    }
+
+    // ================= BATCH FILE UPLOAD =================
+    public void uploadRoomFile() {
+        System.out.print("Enter full path of the CSV file (e.g., C:/data/rooms.csv): ");
+        String filePath = sc.nextLine().trim();
+
+        String insertSql = "INSERT INTO `rooms`(`hotel_id`, `room_type`, `total_rooms`, `available_rooms`, `max_persons`, `price_per_night`)" +
+                " VALUES (?, ?, ?, ?, ?, ?)";
+
+        int successCount = 0;
+        int failCount = 0;
+
+        try (BufferedReader br = new BufferedReader(new FileReader(filePath));
+             PreparedStatement pst = con.prepareStatement(insertSql)) {
+
+            String line;
+            boolean isHeader = true;
+
+            boolean autoCommitState = con.getAutoCommit();
+            con.setAutoCommit(false); // Batch transaction safety
+
+            while ((line = br.readLine()) != null) {
+                if (line.isBlank()) continue;
+
+                // Skip header row
+                if (isHeader) {
+                    isHeader = false;
+                    continue;
+                }
+
+                String[] data = line.split(",");
+
+                if (data.length < 6) {
+                    System.out.println("Skipping malformed row: " + line);
+                    failCount++;
+                    continue;
+                }
+
+                try {
+                    int hotelIdVal = Integer.parseInt(data[0].trim());
+                    String rType = data[1].trim();
+                    int totalR = Integer.parseInt(data[2].trim());
+                    int availR = Integer.parseInt(data[3].trim());
+                    int maxPersons = Integer.parseInt(data[4].trim());
+                    BigDecimal priceVal = new BigDecimal(data[5].trim());
+
+                    pst.setInt(1, hotelIdVal);
+                    pst.setString(2, rType);
+                    pst.setInt(3, totalR);
+                    pst.setInt(4, availR);
+                    pst.setInt(5, maxPersons);
+                    pst.setBigDecimal(6, priceVal);
+
+                    pst.addBatch();
+                    successCount++;
+
+                } catch (Exception e) {
+                    System.out.println("Error parsing row [" + line + "]: " + e.getMessage());
+                    failCount++;
+                }
+            }
+
+            pst.executeBatch();
+            con.commit();
+            con.setAutoCommit(autoCommitState);
+
+            System.out.println("\n==========================================");
+            System.out.println(" BATCH UPLOAD COMPLETE!");
+            System.out.println(" Rooms Added Successfully : " + successCount);
+            System.out.println(" Failed / Skipped Rows    : " + failCount);
+            System.out.println("==========================================\n");
+
+        } catch (Exception e) {
+            System.out.println("File upload failed: " + e.getMessage());
+        }
     }
 
     @Override

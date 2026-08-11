@@ -3,6 +3,8 @@ package Admin;
 import JDBC.connection;
 import Travel_Booking_System.Methods;
 
+import java.io.BufferedReader;
+import java.io.FileReader;
 import java.sql.*;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -99,6 +101,23 @@ public class Train extends connection implements Manageable {
 
     @Override
     public void add() throws Exception {
+        System.out.println("\n--- ADD TRAIN ---");
+        System.out.println("1. Single Manual Entry");
+        System.out.println("2. Bulk Upload via CSV File");
+        System.out.println("3. Back");
+
+        int mode = new Methods().readValidInt("Choice: ");
+        if (mode == 2) {
+            uploadTrainFile();
+            return;
+        } else if (mode == 3 || mode == 0) {
+            return;
+        } else if (mode != 1) {
+            System.out.println("Invalid Choice.");
+            return;
+        }
+
+        // Manual Entry
         while (true) {
             System.out.println("\nTrain type :-");
             System.out.println("1. Intercity");
@@ -198,9 +217,7 @@ public class Train extends connection implements Manageable {
 
         int price = new Methods().readValidInt("Price : ");
 
-        System.out.print("Journey_Time(in hours) : ");
-        float jTime = sc.nextFloat();
-        sc.nextLine();
+        float jTime = new Methods().readValidFloat("Time of Journey (in hours): ");
 
         System.out.print("Station Name :");
         String sName = sc.nextLine().trim();
@@ -373,6 +390,92 @@ public class Train extends connection implements Manageable {
             } else {
                 System.out.println("Invalid Train Id");
             }
+        }
+    }
+
+    // ================= BATCH FILE UPLOAD =================
+    public void uploadTrainFile() {
+        System.out.print("Enter full path of the CSV file (e.g., C:/data/trains.csv): ");
+        String filePath = sc.nextLine().trim();
+
+        String insertSql = "INSERT INTO TRAINS (`T_From`, `T_To`, `T_Type`, `price`, `Departure_Time`, " +
+                "`Journey_Time(in hours)`, `Station_Name`, `Platform_Number`, `Available_Tickets`) " +
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
+
+        int successCount = 0;
+        int failCount = 0;
+
+        try (BufferedReader br = new BufferedReader(new FileReader(filePath));
+             PreparedStatement pst = con.prepareStatement(insertSql)) {
+
+            String line;
+            boolean isHeader = true;
+
+            boolean autoCommitState = con.getAutoCommit();
+            con.setAutoCommit(false); // Batch transaction safety
+
+            DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
+
+            while ((line = br.readLine()) != null) {
+                if (line.isBlank()) continue;
+
+                // Skip header row
+                if (isHeader) {
+                    isHeader = false;
+                    continue;
+                }
+
+                String[] data = line.split(",");
+
+                if (data.length < 9) {
+                    System.out.println("Skipping malformed row: " + line);
+                    failCount++;
+                    continue;
+                }
+
+                try {
+                    String fromStr = data[0].trim();
+                    String toStr = data[1].trim();
+                    String typeStr = data[2].trim();
+                    int priceVal = Integer.parseInt(data[3].trim());
+
+                    LocalDateTime departure = LocalDateTime.parse(data[4].trim(), formatter);
+                    float journeyTime = Float.parseFloat(data[5].trim());
+                    String stationName = data[6].trim();
+                    int platformNo = Integer.parseInt(data[7].trim());
+                    int tickets = Integer.parseInt(data[8].trim());
+
+                    pst.setString(1, fromStr);
+                    pst.setString(2, toStr);
+                    pst.setString(3, typeStr);
+                    pst.setInt(4, priceVal);
+                    pst.setObject(5, departure);
+                    pst.setFloat(6, journeyTime);
+                    pst.setString(7, stationName);
+                    pst.setInt(8, platformNo);
+                    pst.setInt(9, tickets);
+
+                    pst.addBatch();
+                    successCount++;
+
+                } catch (Exception e) {
+                    System.out.println("Error parsing row [" + line + "]: " + e.getMessage());
+                    failCount++;
+                }
+            }
+
+            pst.executeBatch();
+            con.commit();
+            con.setAutoCommit(autoCommitState);
+
+            System.out.println("\n==========================================");
+            System.out.println(" BATCH UPLOAD COMPLETE!");
+            System.out.println(" Trains Added Successfully : " + successCount);
+            System.out.println(" Failed / Skipped Rows    : " + failCount);
+            System.out.println("==========================================\n");
+
+        } catch (Exception e) {
+            System.out.println("File upload failed: " + e.getMessage());
         }
     }
 }

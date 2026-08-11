@@ -4,7 +4,9 @@ import JDBC.connection;
 import Travel_Booking_System.Methods;
 import Data_Structure.*;
 
+import java.io.BufferedReader;
 import java.io.FileOutputStream;
+import java.io.FileReader;
 import java.io.IOException;
 import java.sql.*;
 import java.time.LocalDateTime;
@@ -99,6 +101,23 @@ public class Flight extends connection implements Manageable {
 
     @Override
     public void add() throws Exception {
+        System.out.println("\n--- ADD FLIGHT ---");
+        System.out.println("1. Single Manual Entry");
+        System.out.println("2. Bulk Upload via CSV File");
+        System.out.println("3. Back");
+
+        int mode = new Methods().readValidInt("Choice: ");
+        if (mode == 2) {
+            uploadFlightFile();
+            return;
+        } else if (mode == 3 || mode == 0) {
+            return;
+        } else if (mode != 1) {
+            System.out.println("Invalid Choice.");
+            return;
+        }
+
+        // Manual Insertion Flow
         while (true) {
             System.out.println("\nFlight type :-");
             System.out.println("1. Domestic");
@@ -204,9 +223,7 @@ public class Flight extends connection implements Manageable {
             }
         }
 
-        System.out.print("Time of Journey (in hours): ");
-        float jTime = sc.nextFloat();
-        sc.nextLine();
+        float jTime = new Methods().readValidFloat("Time of Journey (in hours): ");
 
         int tickets = new Methods().readValidInt("Available Tickets : ");
         int price = new Methods().readValidInt("Price : ");
@@ -454,5 +471,89 @@ public class Flight extends connection implements Manageable {
             }
         }
         return temp;
+    }
+
+    // ================= BATCH FILE UPLOAD =================
+    public void uploadFlightFile() {
+        System.out.print("Enter full path of the CSV file (e.g., C:/data/flights.csv): ");
+        String filePath = sc.nextLine().trim();
+
+        String insertSql = "INSERT INTO flights (`F_From`, `F_To`, `F_Type`, `price`, " +
+                "`Boarding_Time`, `Journey_Time(in hours)`, `Departure_Time`, `Available_Tickets`) " +
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
+
+        int successCount = 0;
+        int failCount = 0;
+
+        try (BufferedReader br = new BufferedReader(new FileReader(filePath));
+             PreparedStatement pst = con.prepareStatement(insertSql)) {
+
+            String line;
+            boolean isHeader = true;
+
+            boolean autoCommitState = con.getAutoCommit();
+            con.setAutoCommit(false); // Enable batch transaction
+
+            DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
+
+            while ((line = br.readLine()) != null) {
+                if (line.isBlank()) continue;
+
+                // Skip header row
+                if (isHeader) {
+                    isHeader = false;
+                    continue;
+                }
+
+                String[] data = line.split(",");
+
+                if (data.length < 8) {
+                    System.out.println("Skipping malformed row: " + line);
+                    failCount++;
+                    continue;
+                }
+
+                try {
+                    String from = data[0].trim();
+                    String to = data[1].trim();
+                    String type = data[2].trim();
+                    double price = Double.parseDouble(data[3].trim());
+
+                    LocalDateTime boarding = LocalDateTime.parse(data[4].trim(), formatter);
+                    float journeyTime = Float.parseFloat(data[5].trim());
+                    LocalDateTime departure = LocalDateTime.parse(data[6].trim(), formatter);
+                    int tickets = Integer.parseInt(data[7].trim());
+
+                    pst.setString(1, from);
+                    pst.setString(2, to);
+                    pst.setString(3, type);
+                    pst.setDouble(4, price);
+                    pst.setObject(5, boarding);
+                    pst.setFloat(6, journeyTime);
+                    pst.setObject(7, departure);
+                    pst.setInt(8, tickets);
+
+                    pst.addBatch();
+                    successCount++;
+
+                } catch (Exception e) {
+                    System.out.println("Error parsing row [" + line + "]: " + e.getMessage());
+                    failCount++;
+                }
+            }
+
+            pst.executeBatch();
+            con.commit();
+            con.setAutoCommit(autoCommitState);
+
+            System.out.println("\n==========================================");
+            System.out.println(" BATCH UPLOAD COMPLETE!");
+            System.out.println(" Flights Added Successfully : " + successCount);
+            System.out.println(" Failed / Skipped Rows     : " + failCount);
+            System.out.println("==========================================\n");
+
+        } catch (Exception e) {
+            System.out.println("File upload failed: " + e.getMessage());
+        }
     }
 }

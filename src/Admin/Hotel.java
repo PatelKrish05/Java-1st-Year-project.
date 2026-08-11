@@ -3,6 +3,8 @@ package Admin;
 import JDBC.connection;
 import Travel_Booking_System.Methods;
 
+import java.io.BufferedReader;
+import java.io.FileReader;
 import java.sql.*;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
@@ -113,6 +115,23 @@ public class Hotel extends connection implements Manageable {
 
     @Override
     public void add() throws Exception {
+        System.out.println("\n--- ADD HOTEL ---");
+        System.out.println("1. Single Manual Entry");
+        System.out.println("2. Bulk Upload via CSV File");
+        System.out.println("3. Back");
+
+        int mode = new Methods().readValidInt("Choice: ");
+        if (mode == 2) {
+            uploadHotelFile();
+            return;
+        } else if (mode == 3 || mode == 0) {
+            return;
+        } else if (mode != 1) {
+            System.out.println("Invalid Choice.");
+            return;
+        }
+
+        // Manual Entry Flow
         long[] result = resolveCityToId("City Name / Pincode : ");
         if (result == null) return;
         cID = result[0];
@@ -353,18 +372,17 @@ public class Hotel extends connection implements Manageable {
                 try {
                     con.setAutoCommit(false);
 
+                    // 1. Mark customer hotel bookings as CANCELED
                     PreparedStatement cancelBookings = con.prepareStatement("UPDATE hotel_booking SET status = 'CANCELED' WHERE hotel_id = ?");
                     cancelBookings.setInt(1, hID);
                     int affectedUsers = cancelBookings.executeUpdate();
 
-                    PreparedStatement delPkgHotels = con.prepareStatement("DELETE FROM packages_hotels WHERE hotel_id = ?");
-                    delPkgHotels.setInt(1, hID);
-                    delPkgHotels.executeUpdate();
-
+                    // 2. Delete rooms associated with this hotel
                     PreparedStatement delRooms = con.prepareStatement("DELETE FROM rooms WHERE hotel_id = ?");
                     delRooms.setInt(1, hID);
                     delRooms.executeUpdate();
 
+                    // 3. Delete the hotel record
                     PreparedStatement delHotel = con.prepareStatement("DELETE FROM hotels WHERE hotel_id = ?");
                     delHotel.setInt(1, hID);
                     int r = delHotel.executeUpdate();
@@ -467,6 +485,119 @@ public class Hotel extends connection implements Manageable {
                 continue;
             }
             return input;
+        }
+    }
+
+    // ================= BATCH FILE UPLOAD =================
+    public void uploadHotelFile() {
+        System.out.print("Enter full path of the CSV file (e.g., C:/data/hotels.csv): ");
+        String filePath = sc.nextLine().trim();
+
+        String insertSql = "INSERT INTO `hotels`(`hotel_name`, `city_id`, `address`, `hotel_type`, `rating`, `check_in`, `check_out`, `contact_no`, `email`, `description`)" +
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+
+        int successCount = 0;
+        int failCount = 0;
+
+        try (BufferedReader br = new BufferedReader(new FileReader(filePath))) {
+            String line;
+            boolean isHeader = true;
+
+            boolean autoCommitState = con.getAutoCommit();
+            con.setAutoCommit(false); // Enable batch transaction
+
+            DateTimeFormatter timeFormatter = DateTimeFormatter.ofPattern("HH:mm");
+
+            while ((line = br.readLine()) != null) {
+                if (line.isBlank()) continue;
+
+                // Skip header row
+                if (isHeader) {
+                    isHeader = false;
+                    continue;
+                }
+
+                String[] data = line.split(",");
+
+                if (data.length < 10) {
+                    System.out.println("Skipping malformed row: " + line);
+                    failCount++;
+                    continue;
+                }
+
+                try {
+                    String hotelNameStr = data[0].trim();
+                    String locationStr = data[1].trim();
+                    String addressStr = data[2].trim();
+                    String typeStr = data[3].trim();
+                    double ratingVal = Double.parseDouble(data[4].trim());
+
+                    LocalTime checkInTime = LocalTime.parse(data[5].trim(), timeFormatter);
+                    LocalTime checkOutTime = LocalTime.parse(data[6].trim(), timeFormatter);
+                    String phoneStr = data[7].trim();
+                    String emailStr = data[8].trim();
+                    String descStr = data[9].trim();
+
+                    // Resolve City ID from City Name or Pincode
+                    Long cityIdVal = null;
+                    if (locationStr.matches("\\d{6}")) {
+                        String pSql = "SELECT city_id FROM view_pincode_location WHERE pincode = ? LIMIT 1";
+                        try (PreparedStatement pSt = con.prepareStatement(pSql)) {
+                            pSt.setString(1, locationStr);
+                            ResultSet pRs = pSt.executeQuery();
+                            if (pRs.next()) cityIdVal = pRs.getLong("city_id");
+                        }
+                    }
+
+                    if (cityIdVal == null) {
+                        String cSql = "SELECT city_id FROM cities WHERE LOWER(city_name) = LOWER(?) LIMIT 1";
+                        try (PreparedStatement cSt = con.prepareStatement(cSql)) {
+                            cSt.setString(1, locationStr);
+                            ResultSet cRs = cSt.executeQuery();
+                            if (cRs.next()) cityIdVal = cRs.getLong("city_id");
+                        }
+                    }
+
+                    if (cityIdVal == null) {
+                        System.out.println("Skipping row, City/Pincode not found [" + locationStr + "]: " + line);
+                        failCount++;
+                        continue;
+                    }
+
+                    try (PreparedStatement pst = con.prepareStatement(insertSql)) {
+                        pst.setString(1, hotelNameStr);
+                        pst.setLong(2, cityIdVal);
+                        pst.setString(3, addressStr);
+                        pst.setString(4, typeStr);
+                        pst.setDouble(5, ratingVal);
+                        pst.setObject(6, checkInTime);
+                        pst.setObject(7, checkOutTime);
+                        pst.setString(8, phoneStr);
+                        pst.setString(9, emailStr);
+                        pst.setString(10, descStr);
+
+                        int inserted = pst.executeUpdate();
+                        if (inserted > 0) successCount++;
+                        else failCount++;
+                    }
+
+                } catch (Exception e) {
+                    System.out.println("Error parsing row [" + line + "]: " + e.getMessage());
+                    failCount++;
+                }
+            }
+
+            con.commit();
+            con.setAutoCommit(autoCommitState);
+
+            System.out.println("\n==========================================");
+            System.out.println(" BATCH UPLOAD COMPLETE!");
+            System.out.println(" Hotels Added Successfully : " + successCount);
+            System.out.println(" Failed / Skipped Rows     : " + failCount);
+            System.out.println("==========================================\n");
+
+        } catch (Exception e) {
+            System.out.println("File upload failed: " + e.getMessage());
         }
     }
 }

@@ -3,7 +3,12 @@ package Admin;
 import JDBC.connection;
 import Travel_Booking_System.Methods;
 
+import java.io.BufferedReader;
+import java.io.FileReader;
 import java.sql.*;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.Scanner;
 
 public class Cab extends connection implements Manageable {
     Timestamp departure = null;
@@ -57,7 +62,23 @@ public class Cab extends connection implements Manageable {
 
     @Override
     public void add() throws Exception {
+        System.out.println("\n--- ADD CAB ---");
+        System.out.println("1. Single Manual Entry");
+        System.out.println("2. Bulk Upload via CSV File");
+        System.out.println("3. Back");
 
+        int mode = new Methods().readValidInt("Choice: ");
+        if (mode == 2) {
+            uploadCabFile();
+            return;
+        } else if (mode == 3 || mode == 0) {
+            return;
+        } else if (mode != 1) {
+            System.out.println("Invalid Choice.");
+            return;
+        }
+
+        // Manual Entry
         while (true) {
             System.out.println("\nCab For :-");
             System.out.println("1. Flight");
@@ -160,6 +181,101 @@ public class Cab extends connection implements Manageable {
 
         int r = pt.executeUpdate();
         System.out.println(r != 0 ? "Cab Added Successfully!" : "Failed to Add Cab.");
+    }
+
+    // ================= BATCH FILE UPLOAD =================
+    public void uploadCabFile() {
+        Scanner scanner = new Scanner(System.in);
+        System.out.print("Enter full path of the CSV file (e.g., C:/data/cabs.csv): ");
+        String filePath = scanner.nextLine().trim();
+
+        int successCount = 0;
+        int failCount = 0;
+
+        try (BufferedReader br = new BufferedReader(new FileReader(filePath))) {
+            String line;
+            boolean isHeader = true;
+
+            boolean autoCommitState = con.getAutoCommit();
+            con.setAutoCommit(false); // Batch transaction safety
+
+            DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
+
+            while ((line = br.readLine()) != null) {
+                if (line.isBlank()) continue;
+
+                // Skip header row
+                if (isHeader) {
+                    isHeader = false;
+                    continue;
+                }
+
+                String[] data = line.split(",");
+
+                if (data.length < 6) {
+                    System.out.println("Skipping malformed row: " + line);
+                    failCount++;
+                    continue;
+                }
+
+                try {
+                    LocalDateTime depDateTime = LocalDateTime.parse(data[0].trim(), formatter);
+                    Timestamp depTimestamp = Timestamp.valueOf(depDateTime);
+                    int maxPass = Integer.parseInt(data[1].trim());
+                    int avail = Integer.parseInt(data[2].trim());
+                    int priceVal = Integer.parseInt(data[3].trim());
+                    String targetType = data[4].trim().toUpperCase();
+                    int targetId = Integer.parseInt(data[5].trim());
+
+                    String fkCol = switch (targetType) {
+                        case "FLIGHT", "F" -> "F_id";
+                        case "TRAIN", "T" -> "T_id";
+                        case "BUS", "B" -> "B_id";
+                        default -> null;
+                    };
+
+                    if (fkCol == null) {
+                        System.out.println("Skipping row with invalid vehicle type [" + targetType + "]: " + line);
+                        failCount++;
+                        continue;
+                    }
+
+                    String insertSql = "INSERT INTO `cabs`(`Departure_Time`, `Max_Passenger`, `Availability`, `Price`, `" + fkCol + "`) " +
+                            "VALUES (?, ?, ?, ?, ?)";
+
+                    try (PreparedStatement pst = con.prepareStatement(insertSql)) {
+                        pst.setTimestamp(1, depTimestamp);
+                        pst.setInt(2, maxPass);
+                        pst.setInt(3, avail);
+                        pst.setInt(4, priceVal);
+                        pst.setInt(5, targetId);
+
+                        int inserted = pst.executeUpdate();
+                        if (inserted > 0) {
+                            successCount++;
+                        } else {
+                            failCount++;
+                        }
+                    }
+
+                } catch (Exception e) {
+                    System.out.println("Error parsing row [" + line + "]: " + e.getMessage());
+                    failCount++;
+                }
+            }
+
+            con.commit();
+            con.setAutoCommit(autoCommitState);
+
+            System.out.println("\n==========================================");
+            System.out.println(" BATCH UPLOAD COMPLETE!");
+            System.out.println(" Cabs Added Successfully : " + successCount);
+            System.out.println(" Failed / Skipped Rows   : " + failCount);
+            System.out.println("==========================================\n");
+
+        } catch (Exception e) {
+            System.out.println("File upload failed: " + e.getMessage());
+        }
     }
 
     @Override
