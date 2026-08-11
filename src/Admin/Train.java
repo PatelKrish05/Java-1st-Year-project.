@@ -15,56 +15,91 @@ public class Train extends connection implements Manageable {
     int choice, tID;
     Scanner sc = new Scanner(System.in);
 
-    // Helper method to resolve City Name or Pincode
-    private String resolveCityInput(String prompt) throws Exception {
+    // ================= STRICT STATE, CITY & PINCODE RESOLUTION =================
+    private String resolveLocation(String message) throws Exception {
         while (true) {
-            System.out.print(prompt);
+            System.out.println("\n--- " + message.toUpperCase() + " LOCATION ---");
+            System.out.print("Enter State Name or 6-Digit Pincode: ");
             String input = sc.nextLine().trim();
-            if (input.isBlank()) return null;
 
-            // Pincode Lookup
+            if (input.isBlank()) {
+                System.out.println("Input cannot be empty. Please try again.");
+                continue;
+            }
+
+            // 1. PINCODE AUTO-FETCH (Extracts verified State and City)
             if (input.matches("\\d+")) {
                 if (!input.matches("\\d{6}")) {
-                    System.out.println("Invalid pincode length! Pincodes must be 6 digits. Try again.\n");
+                    System.out.println("Invalid pincode length! Pincodes must be exactly 6 digits. Try again.");
                     continue;
                 }
-                String pinSql = "SELECT city_name FROM view_pincode_location WHERE pincode = ? LIMIT 1";
+                String pinSql = "SELECT city_name, state_name FROM view_pincode_location WHERE pincode = ? LIMIT 1";
                 try (PreparedStatement pst = con.prepareStatement(pinSql)) {
                     pst.setString(1, input);
-                    ResultSet rs = pst.executeQuery();
-                    if (rs.next()) {
-                        String cityName = rs.getString("city_name");
-                        System.out.println("-> Detected City: " + cityName);
-                        return cityName;
-                    } else {
-                        System.out.println("Pincode not found in database. Please enter a valid Pincode or City Name.\n");
-                        continue;
+                    try (ResultSet rs = pst.executeQuery()) {
+                        if (rs.next()) {
+                            String detectedCity = rs.getString("city_name");
+                            String detectedState = rs.getString("state_name");
+                            System.out.println("-> Detected Location: " + detectedState + ", " + detectedCity);
+                            return detectedState + ", " + detectedCity;
+                        } else {
+                            System.out.println("Pincode '" + input + "' not found in database. Try a valid Pincode or State Name.\n");
+                            continue;
+                        }
                     }
                 }
             }
 
-            // City Name Check
-            String citySql = "SELECT city_name FROM cities WHERE LOWER(city_name) = LOWER(?) LIMIT 1";
-            try (PreparedStatement pst = con.prepareStatement(citySql)) {
+            // 2. STRICT STATE NAME VALIDATION
+            String stateName = null;
+            int stateId = 0;
+            String stateSql = "SELECT state_id, state_name FROM states WHERE LOWER(state_name) = LOWER(?) LIMIT 1";
+            try (PreparedStatement pst = con.prepareStatement(stateSql)) {
                 pst.setString(1, input);
-                ResultSet rs = pst.executeQuery();
-                if (rs.next()) {
-                    return rs.getString("city_name");
-                } else {
-                    String vSql = "SELECT city_name FROM view_pincode_location WHERE LOWER(city_name) = LOWER(?) LIMIT 1";
-                    try (PreparedStatement vPst = con.prepareStatement(vSql)) {
-                        vPst.setString(1, input);
-                        ResultSet vRs = vPst.executeQuery();
-                        if (vRs.next()) {
-                            return vRs.getString("city_name");
+                try (ResultSet rs = pst.executeQuery()) {
+                    if (rs.next()) {
+                        stateId = rs.getInt("state_id");
+                        stateName = rs.getString("state_name");
+                    }
+                }
+            }
+
+            if (stateName == null) {
+                System.out.println("Invalid State: '" + input + "' not found in database. Try again.");
+                continue;
+            }
+
+            // 3. STRICT CITY NAME VALIDATION UNDER STATE
+            while (true) {
+                System.out.print("Enter City Name for " + stateName + " (or 0 to change State): ");
+                String cityInput = sc.nextLine().trim();
+
+                if (cityInput.equals("0")) break;
+
+                if (cityInput.isBlank()) {
+                    System.out.println("City name cannot be blank. Try again.");
+                    continue;
+                }
+
+                String cityName = null;
+                String citySql = "SELECT city_name FROM cities WHERE LOWER(city_name) = LOWER(?) AND state_id = ? LIMIT 1";
+
+                try (PreparedStatement pst = con.prepareStatement(citySql)) {
+                    pst.setString(1, cityInput);
+                    pst.setInt(2, stateId);
+
+                    try (ResultSet rs = pst.executeQuery()) {
+                        if (rs.next()) {
+                            cityName = rs.getString("city_name");
                         }
                     }
+                }
 
-                    System.out.println("City '" + input + "' not found in database.");
-                    System.out.println("1. Use typed name anyway");
-                    System.out.println("2. Try another City");
-                    int opt = new Methods().readValidInt("Choice: ");
-                    if (opt == 1) return input;
+                if (cityName != null) {
+                    System.out.println("-> Selected Location: " + stateName + ", " + cityName);
+                    return stateName + ", " + cityName;
+                } else {
+                    System.out.println("Invalid City: '" + cityInput + "' is not a registered city under " + stateName + ". Try again.");
                 }
             }
         }
@@ -77,7 +112,7 @@ public class Train extends connection implements Manageable {
         ResultSet rs = st.executeQuery(sql);
 
         System.out.println("-------------------------------------------------------------------------------------------------------------------------------------");
-        System.out.println("ID\tFrom\t\tTo\t\tType\t\tPrice\tDeparture\t\tJourney Time(in hours)\tStation\t\tPlatform\tTickets");
+        System.out.println("ID\tFrom\t\t\tTo\t\t\tType\t\tPrice\tDeparture\t\tJourney Time(in hours)\tStation\t\tPlatform\tTickets");
         System.out.println("-------------------------------------------------------------------------------------------------------------------------------------");
 
         while (rs.next()) {
@@ -135,18 +170,18 @@ public class Train extends connection implements Manageable {
 
         if (choice == 3) return;
 
-        // 1. Intercity
+        // 1. Intercity (State -> City / Pincode)
         if (choice == 1) {
             t_Type = "Intercity";
             while (true) {
-                from = resolveCityInput("From (City / Pincode) : ");
+                from = resolveLocation("Departure (From)");
                 if (from == null) return;
 
-                to = resolveCityInput("To (City / Pincode) : ");
+                to = resolveLocation("Destination (To)");
                 if (to == null) return;
 
                 if (from.equalsIgnoreCase(to)) {
-                    System.out.println("From and To cities cannot be the same!");
+                    System.out.println("From and To locations cannot be the same!");
                     continue;
                 }
                 break;
@@ -156,40 +191,19 @@ public class Train extends connection implements Manageable {
         // 2. Interstate
         else if (choice == 2) {
             t_Type = "Interstate";
-            String t_CFrom, t_SFrom, t_CTo, t_STo;
 
             while (true) {
-                System.out.println("\nFrom :-");
-                System.out.print("State : ");
-                t_SFrom = sc.nextLine().trim();
-                System.out.print("City / Pincode : ");
-                t_CFrom = resolveCityInput("City : ");
-                if (t_CFrom == null) return;
+                from = resolveLocation("Departure State/City (From)");
+                if (from == null) return;
 
-                if (!t_SFrom.isBlank()) {
-                    from = t_SFrom + ", " + t_CFrom;
-                    break;
+                to = resolveLocation("Destination State/City (To)");
+                if (to == null) return;
+
+                if (from.equalsIgnoreCase(to)) {
+                    System.out.println("From and To locations cannot be the same!");
+                    continue;
                 }
-                System.out.println("State cannot be empty.");
-            }
-
-            while (true) {
-                System.out.println("\nTo :-");
-                System.out.print("State : ");
-                t_STo = sc.nextLine().trim();
-                System.out.print("City / Pincode : ");
-                t_CTo = resolveCityInput("City : ");
-                if (t_CTo == null) return;
-
-                if (!t_STo.isBlank()) {
-                    to = t_STo + ", " + t_CTo;
-                    if (from.equalsIgnoreCase(to)) {
-                        System.out.println("From and To locations cannot be the same!");
-                        continue;
-                    }
-                    break;
-                }
-                System.out.println("State cannot be empty.");
+                break;
             }
         }
 
@@ -208,7 +222,7 @@ public class Train extends connection implements Manageable {
                 if (departure.isAfter(LocalDateTime.now())) {
                     break;
                 } else {
-                    System.out.println("Boarding date and time must be after the current date and time.");
+                    System.out.println("Departure date and time must be after the current date and time.");
                 }
             } catch (Exception e) {
                 System.out.println("Invalid Input Format! Use dd-MM-yyyy HH:mm.");

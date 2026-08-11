@@ -21,82 +21,117 @@ public class Flight extends connection implements Manageable {
     int choice, fID;
     Scanner sc = new Scanner(System.in);
 
-    // Helper method to resolve City or Pincode to a valid City Name
-    private String resolveCityInput(String prompt) throws Exception {
+    // ================= STRICT STATE, CITY & PINCODE RESOLUTION =================
+    private String resolveLocation(String message) throws Exception {
         while (true) {
-            System.out.print(prompt);
+            System.out.println("\n--- " + message.toUpperCase() + " LOCATION ---");
+            System.out.print("Enter State Name or 6-Digit Pincode: ");
             String input = sc.nextLine().trim();
-            if (input.isBlank()) return null;
 
-            // Pincode Resolution
+            if (input.isBlank()) {
+                System.out.println("Input cannot be empty. Please try again.");
+                continue;
+            }
+
+            // 1. PINCODE AUTO-FETCH (Extracts verified State and City)
             if (input.matches("\\d+")) {
                 if (!input.matches("\\d{6}")) {
-                    System.out.println("Invalid pincode length! Pincodes must be 6 digits. Try again.\n");
+                    System.out.println("Invalid pincode length! Pincodes must be exactly 6 digits. Try again.");
                     continue;
                 }
-                String pinSql = "SELECT city_name FROM view_pincode_location WHERE pincode = ? LIMIT 1";
+                String pinSql = "SELECT city_name, state_name FROM view_pincode_location WHERE pincode = ? LIMIT 1";
                 try (PreparedStatement pst = con.prepareStatement(pinSql)) {
                     pst.setString(1, input);
-                    ResultSet rs = pst.executeQuery();
-                    if (rs.next()) {
-                        String cityName = rs.getString("city_name");
-                        System.out.println("-> Detected City: " + cityName);
-                        return cityName;
-                    } else {
-                        System.out.println("Pincode not found in database. Please enter a valid Pincode or City Name.\n");
-                        continue;
+                    try (ResultSet rs = pst.executeQuery()) {
+                        if (rs.next()) {
+                            String detectedCity = rs.getString("city_name");
+                            String detectedState = rs.getString("state_name");
+                            System.out.println("-> Detected Location: " + detectedState + ", " + detectedCity);
+                            return detectedState + ", " + detectedCity;
+                        } else {
+                            System.out.println("Pincode '" + input + "' not found in database. Try a valid Pincode or State Name.\n");
+                            continue;
+                        }
                     }
                 }
             }
 
-            // City Name Resolution
-            String citySql = "SELECT city_name FROM cities WHERE LOWER(city_name) = LOWER(?) LIMIT 1";
-            try (PreparedStatement pst = con.prepareStatement(citySql)) {
+            // 2. STRICT STATE NAME VALIDATION
+            String stateName = null;
+            int stateId = 0;
+            String stateSql = "SELECT state_id, state_name FROM states WHERE LOWER(state_name) = LOWER(?) LIMIT 1";
+            try (PreparedStatement pst = con.prepareStatement(stateSql)) {
                 pst.setString(1, input);
-                ResultSet rs = pst.executeQuery();
-                if (rs.next()) {
-                    return rs.getString("city_name");
-                } else {
-                    // Check view_pincode_location fallback
-                    String vSql = "SELECT city_name FROM view_pincode_location WHERE LOWER(city_name) = LOWER(?) LIMIT 1";
-                    try (PreparedStatement vPst = con.prepareStatement(vSql)) {
-                        vPst.setString(1, input);
-                        ResultSet vRs = vPst.executeQuery();
-                        if (vRs.next()) {
-                            return vRs.getString("city_name");
+                try (ResultSet rs = pst.executeQuery()) {
+                    if (rs.next()) {
+                        stateId = rs.getInt("state_id");
+                        stateName = rs.getString("state_name");
+                    }
+                }
+            }
+
+            if (stateName == null) {
+                System.out.println("Invalid State: '" + input + "' not found in database. Try again.");
+                continue;
+            }
+
+            // 3. STRICT CITY NAME VALIDATION UNDER STATE
+            while (true) {
+                System.out.print("Enter City Name for " + stateName + " (or 0 to change State): ");
+                String cityInput = sc.nextLine().trim();
+
+                if (cityInput.equals("0")) break;
+
+                if (cityInput.isBlank()) {
+                    System.out.println("City name cannot be blank. Try again.");
+                    continue;
+                }
+
+                String cityName = null;
+                String citySql = "SELECT city_name FROM cities WHERE LOWER(city_name) = LOWER(?) AND state_id = ? LIMIT 1";
+
+                try (PreparedStatement pst = con.prepareStatement(citySql)) {
+                    pst.setString(1, cityInput);
+                    pst.setInt(2, stateId);
+
+                    try (ResultSet rs = pst.executeQuery()) {
+                        if (rs.next()) {
+                            cityName = rs.getString("city_name");
                         }
                     }
+                }
 
-                    System.out.println("City '" + input + "' not found in database.");
-                    System.out.println("1. Use typed name anyway");
-                    System.out.println("2. Try another City");
-                    int opt = new Methods().readValidInt("Choice: ");
-                    if (opt == 1) return input;
+                if (cityName != null) {
+                    System.out.println("-> Selected Location: " + stateName + ", " + cityName);
+                    return stateName + ", " + cityName;
+                } else {
+                    System.out.println("Invalid City: '" + cityInput + "' is not a registered city under " + stateName + ". Try again.");
                 }
             }
         }
     }
 
     public void view() throws Exception {
-        String sql = "SELECT * FROM flights";
-        Statement st = con.createStatement();
-        ResultSet rs = st.executeQuery(sql);
-        System.out.println("--------------------------------------------------------------------------------------------------------------");
-        System.out.println("ID\tFrom\t\tTo\t\tType\t\tPrice\tBoarding\t\tJourney Time\tDeparture\tAvailable_Tickets\n");
-        System.out.println("--------------------------------------------------------------------------------------------------------------");
-        while (rs.next()) {
-            System.out.println(
-                    rs.getInt(1) + "\t" +
-                            rs.getString(2) + "\t\t" +
-                            rs.getString(3) + "\t\t" +
-                            rs.getString(4) + "\t\t" +
-                            rs.getInt(5) + "\t" +
-                            rs.getTimestamp(6) + "\t" +
-                            rs.getFloat(7) + "\t\t" +
-                            rs.getTimestamp(8) + "\t" +
-                            rs.getInt(9));
+        String sql = "SELECT * FROM flights ORDER BY Flight_id";
+        try (Statement st = con.createStatement();
+             ResultSet rs = st.executeQuery(sql)) {
+            System.out.println("-------------------------------------------------------------------------------------------------------------------------------------");
+            System.out.println("ID\tFrom\t\t\tTo\t\t\tType\t\tPrice\tBoarding\t\tJourney Time\tDeparture\tAvailable_Tickets");
+            System.out.println("-------------------------------------------------------------------------------------------------------------------------------------");
+            while (rs.next()) {
+                System.out.println(
+                        rs.getInt(1) + "\t" +
+                                rs.getString(2) + "\t\t" +
+                                rs.getString(3) + "\t\t" +
+                                rs.getString(4) + "\t\t" +
+                                rs.getInt(5) + "\t" +
+                                rs.getTimestamp(6) + "\t" +
+                                rs.getFloat(7) + "\t\t" +
+                                rs.getTimestamp(8) + "\t" +
+                                rs.getInt(9));
+            }
+            System.out.println("-------------------------------------------------------------------------------------------------------------------------------------");
         }
-        System.out.println("--------------------------------------------------------------------------------------------------------------");
     }
 
     @Override
@@ -132,25 +167,25 @@ public class Flight extends connection implements Manageable {
 
         if (choice == 4) return;
 
-        // 1. Domestic Flights (City / Pincode Input)
+        // 1. Domestic Flights (State -> City / Pincode Input)
         if (choice == 1) {
             f_Type = "Domestic";
             while (true) {
-                from = resolveCityInput("From (City / Pincode): ");
+                from = resolveLocation("Departure (From)");
                 if (from == null) return;
 
-                to = resolveCityInput("To (City / Pincode): ");
+                to = resolveLocation("Destination (To)");
                 if (to == null) return;
 
                 if (from.equalsIgnoreCase(to)) {
-                    System.out.println("Departure and Destination cities cannot be the same!");
+                    System.out.println("Departure and Destination locations cannot be the same!");
                     continue;
                 }
                 break;
             }
         }
 
-        // 2. International Flights
+        // 2. International & Private Flights
         else if (choice == 2 || choice == 3) {
             f_Type = (choice == 2) ? "International" : "Private";
             String f_CFrom, f_SFrom, f_CTo, f_STo;
@@ -159,24 +194,24 @@ public class Flight extends connection implements Manageable {
                 System.out.println("\nFrom :-");
                 System.out.print("Country : ");
                 f_CFrom = sc.nextLine().trim();
-                System.out.print("State / City : ");
-                f_SFrom = sc.nextLine().trim();
+                f_SFrom = resolveLocation("Departure State/City");
+                if (f_SFrom == null) return;
 
-                if (!f_CFrom.isBlank() && !f_SFrom.isBlank()) {
+                if (!f_CFrom.isBlank()) {
                     from = f_CFrom + ", " + f_SFrom;
                     break;
                 }
-                System.out.println("Country and State/City cannot be empty.");
+                System.out.println("Country cannot be empty.");
             }
 
             while (true) {
                 System.out.println("\nTo :-");
                 System.out.print("Country : ");
                 f_CTo = sc.nextLine().trim();
-                System.out.print("State / City : ");
-                f_STo = sc.nextLine().trim();
+                f_STo = resolveLocation("Destination State/City");
+                if (f_STo == null) return;
 
-                if (!f_CTo.isBlank() && !f_STo.isBlank()) {
+                if (!f_CTo.isBlank()) {
                     to = f_CTo + ", " + f_STo;
                     if (from.equalsIgnoreCase(to)) {
                         System.out.println("Departure and Destination cannot be the same!");
@@ -184,7 +219,7 @@ public class Flight extends connection implements Manageable {
                     }
                     break;
                 }
-                System.out.println("Country and State/City cannot be empty.");
+                System.out.println("Country cannot be empty.");
             }
         }
 
@@ -224,34 +259,50 @@ public class Flight extends connection implements Manageable {
         }
 
         float jTime = new Methods().readValidFloat("Time of Journey (in hours): ");
-
         int tickets = new Methods().readValidInt("Available Tickets : ");
         int price = new Methods().readValidInt("Price : ");
 
-        String sql = "INSERT INTO flights (`F_From`, `F_To`, `F_Type`, `price`, " +
-                "`Boarding_Time`, `Journey_Time(in hours)`, `Departure_Time`, `Available_Tickets`) " +
-                "VALUES (?,?,?,?,?,?,?,?)";
-        PreparedStatement pt = con.prepareStatement(sql);
-        pt.setString(1, from);
-        pt.setString(2, to);
-        pt.setString(3, f_Type);
-        pt.setInt(4, price);
-        pt.setObject(5, boarding);
-        pt.setFloat(6, jTime);
-        pt.setObject(7, departure);
-        pt.setInt(8, tickets);
+        boolean autoCommitState = con.getAutoCommit();
+        try {
+            con.setAutoCommit(false);
 
-        int r = pt.executeUpdate();
-        if (r > 0) {
-            String idSql = "SELECT MAX(FLIGHT_ID) FROM FLIGHTS";
-            Statement st = con.createStatement();
-            ResultSet rs = st.executeQuery(idSql);
-            if (rs.next()) {
-                f.add(fGen(rs.getInt(1), tickets));
+            String sql = "INSERT INTO flights (`F_From`, `F_To`, `F_Type`, `price`, " +
+                    "`Boarding_Time`, `Journey_Time(in hours)`, `Departure_Time`, `Available_Tickets`) " +
+                    "VALUES (?,?,?,?,?,?,?,?)";
+
+            try (PreparedStatement pt = con.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
+                pt.setString(1, from);
+                pt.setString(2, to);
+                pt.setString(3, f_Type);
+                pt.setInt(4, price);
+                pt.setObject(5, boarding);
+                pt.setFloat(6, jTime);
+                pt.setObject(7, departure);
+                pt.setInt(8, tickets);
+
+                int r = pt.executeUpdate();
+                if (r > 0) {
+                    try (ResultSet rs = pt.getGeneratedKeys()) {
+                        if (rs.next()) {
+                            f.add(fGen(rs.getInt(1), tickets));
+                        }
+                    }
+                    con.commit();
+                    System.out.println("Flight Added Successfully!");
+                } else {
+                    if (!con.getAutoCommit()) con.rollback();
+                    System.out.println("Failed to Add Flight.");
+                }
             }
-            System.out.println("Flight Added Successfully!");
-        } else {
-            System.out.println("Failed to Add Flight.");
+        } catch (Exception e) {
+            if (con != null && !con.getAutoCommit()) {
+                con.rollback();
+            }
+            System.out.println("Error adding flight: " + e.getMessage());
+        } finally {
+            if (con != null) {
+                con.setAutoCommit(autoCommitState);
+            }
         }
     }
 
@@ -262,98 +313,98 @@ public class Flight extends connection implements Manageable {
             fID = new Methods().readValidInt("Enter Flight ID : ");
 
             String sql = "SELECT `FLIGHT_ID`, `price`,`Boarding_Time`,`Departure_Time`,`Available_Tickets` FROM FLIGHTS WHERE FLIGHT_ID = ?";
-            PreparedStatement pst = con.prepareStatement(sql);
-            pst.setInt(1, fID);
-            ResultSet rs = pst.executeQuery();
-            ResultSetMetaData rsm = rs.getMetaData();
+            try (PreparedStatement pst = con.prepareStatement(sql)) {
+                pst.setInt(1, fID);
+                try (ResultSet rs = pst.executeQuery()) {
+                    ResultSetMetaData rsm = rs.getMetaData();
 
-            if (rs.next()) {
-                System.out.println("ID : " + rs.getInt(1));
-                System.out.println("1. " + rsm.getColumnName(2) + " = " + rs.getInt(2));
-                System.out.println("2. " + rsm.getColumnName(3) + " = " + rs.getTimestamp(3));
-                System.out.println("3. " + rsm.getColumnName(4) + " = " + rs.getTimestamp(4));
-                System.out.println("4. " + rsm.getColumnName(5) + " = " + rs.getInt(5));
+                    if (rs.next()) {
+                        System.out.println("ID : " + rs.getInt(1));
+                        System.out.println("1. " + rsm.getColumnName(2) + " = " + rs.getInt(2));
+                        System.out.println("2. " + rsm.getColumnName(3) + " = " + rs.getTimestamp(3));
+                        System.out.println("3. " + rsm.getColumnName(4) + " = " + rs.getTimestamp(4));
+                        System.out.println("4. " + rsm.getColumnName(5) + " = " + rs.getInt(5));
 
-                while (true) {
-                    choice = new Methods().readValidInt("Enter Column number to edit : ");
-                    String n = "";
-                    int col = 0;
+                        while (true) {
+                            choice = new Methods().readValidInt("Enter Column number to edit : ");
+                            String n = "";
+                            int col = 0;
 
-                    switch (choice) {
-                        case 1 -> {
-                            int p = new Methods().readValidInt("New Price : ");
-                            n = "" + p;
-                            col = 2;
-                        }
-                        case 2 -> {
-                            DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd-MM-yyyy HH:mm");
-                            LocalDateTime boarding;
-                            while (true) {
-                                System.out.print("Date of Flight Boarding (dd-MM-yyyy): ");
-                                String date = sc.nextLine();
-                                System.out.print("Time of Flight Boarding (HH:mm): ");
-                                String time = sc.nextLine();
+                            switch (choice) {
+                                case 1 -> {
+                                    int p = new Methods().readValidInt("New Price : ");
+                                    n = "" + p;
+                                    col = 2;
+                                }
+                                case 2 -> {
+                                    DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd-MM-yyyy HH:mm");
+                                    LocalDateTime boarding;
+                                    while (true) {
+                                        System.out.print("Date of Flight Boarding (dd-MM-yyyy): ");
+                                        String date = sc.nextLine();
+                                        System.out.print("Time of Flight Boarding (HH:mm): ");
+                                        String time = sc.nextLine();
 
-                                try {
-                                    boarding = LocalDateTime.parse(date + " " + time, formatter);
-                                    break;
-                                } catch (Exception e) {
+                                        try {
+                                            boarding = LocalDateTime.parse(date + " " + time, formatter);
+                                            break;
+                                        } catch (Exception e) {
+                                            System.out.println("Invalid Input");
+                                        }
+                                    }
+                                    n = boarding.toString();
+                                    col = 3;
+                                }
+                                case 3 -> {
+                                    DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd-MM-yyyy HH:mm");
+                                    LocalDateTime departure;
+                                    while (true) {
+                                        System.out.print("Date of Flight Departure (dd-MM-yyyy): ");
+                                        String date = sc.nextLine();
+                                        System.out.print("Time of Flight Departure (HH:mm): ");
+                                        String time = sc.nextLine();
+
+                                        try {
+                                            departure = LocalDateTime.parse(date + " " + time, formatter);
+                                            break;
+                                        } catch (Exception e) {
+                                            System.out.println("Invalid Input");
+                                        }
+                                    }
+                                    n = departure.toString();
+                                    col = 4;
+                                }
+                                case 4 -> {
+                                    int t = new Methods().readValidInt("New Ticket Availability : ");
+                                    n = "" + t;
+                                    col = 5;
+                                    if (fID - 1 < f.size()) {
+                                        String[] New = ticketEdit(f.get(fID - 1), t);
+                                        f.set(fID - 1, New);
+                                    }
+                                }
+                                default -> {
                                     System.out.println("Invalid Input");
+                                    continue;
                                 }
                             }
-                            n = boarding.toString();
-                            col = 3;
-                        }
-                        case 3 -> {
-                            DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd-MM-yyyy HH:mm");
-                            LocalDateTime departure;
-                            while (true) {
-                                System.out.print("Date of Flight Departure (dd-MM-yyyy): ");
-                                String date = sc.nextLine();
-                                System.out.print("Time of Flight Departure (HH:mm): ");
-                                String time = sc.nextLine();
 
-                                try {
-                                    departure = LocalDateTime.parse(date + " " + time, formatter);
-                                    break;
-                                } catch (Exception e) {
-                                    System.out.println("Invalid Input");
-                                }
-                            }
-                            n = departure.toString();
-                            col = 4;
-                        }
-                        case 4 -> {
-                            int t = new Methods().readValidInt("New Ticket Availability : ");
-                            n = "" + t;
-                            col = 5;
-                            if (fID - 1 < f.size()) {
-                                String[] New = ticketEdit(f.get(fID - 1), t);
-                                f.set(fID - 1, New);
+                            String fSql = "UPDATE `flights` SET `" + rsm.getColumnName(col) + "` = ? WHERE FLIGHT_ID = ?";
+                            try (PreparedStatement uSt = con.prepareStatement(fSql)) {
+                                uSt.setString(1, n);
+                                uSt.setInt(2, fID);
+                                uSt.executeUpdate();
+                                System.out.println("Flight Details Updated.");
+                                break;
+                            } catch (SQLException e) {
+                                System.out.println(e.getMessage());
                             }
                         }
-                        default -> {
-                            System.out.println("Invalid Input");
-                            continue;
-                        }
-                    }
-
-                    String fSql = "UPDATE `flights` SET `" + rsm.getColumnName(col) + "` = ? WHERE FLIGHT_ID = ?";
-                    PreparedStatement uSt = con.prepareStatement(fSql);
-                    uSt.setString(1, n);
-                    uSt.setInt(2, fID);
-
-                    try {
-                        uSt.executeUpdate();
-                        System.out.println("Flight Details Updated.");
                         break;
-                    } catch (SQLException e) {
-                        System.out.println(e.getMessage());
+                    } else {
+                        System.out.println("Invalid Flight Id");
                     }
                 }
-                break;
-            } else {
-                System.out.println("Invalid Flight Id");
             }
         }
     }
@@ -366,55 +417,64 @@ public class Flight extends connection implements Manageable {
             if (fId == 0) return;
 
             String fc = "SELECT * FROM `flights` WHERE FLIGHT_ID = ?";
-            PreparedStatement fst = con.prepareStatement(fc);
-            fst.setInt(1, fId);
-            ResultSet fcr = fst.executeQuery();
+            try (PreparedStatement fst = con.prepareStatement(fc)) {
+                fst.setInt(1, fId);
+                try (ResultSet fcr = fst.executeQuery()) {
 
-            if (fcr.next()) {
-                boolean autoCommitState = con.getAutoCommit();
-                try {
-                    con.setAutoCommit(false);
+                    if (fcr.next()) {
+                        boolean autoCommitState = con.getAutoCommit();
+                        try {
+                            con.setAutoCommit(false);
 
-                    PreparedStatement cancelBookings = con.prepareStatement(
-                            "UPDATE flight_booking SET status = 'CANCELED', flight_id = NULL WHERE flight_id = ?"
-                    );
-                    cancelBookings.setInt(1, fId);
-                    int affectedUsers = cancelBookings.executeUpdate();
+                            try (PreparedStatement cancelBookings = con.prepareStatement(
+                                    "UPDATE flight_booking SET status = 'CANCELED', flight_id = NULL WHERE flight_id = ?")) {
+                                cancelBookings.setInt(1, fId);
+                                int affectedUsers = cancelBookings.executeUpdate();
 
-                    PreparedStatement delCabs = con.prepareStatement("DELETE FROM cabs WHERE F_ID = ?");
-                    delCabs.setInt(1, fId);
-                    delCabs.executeUpdate();
+                                try (PreparedStatement delCabs = con.prepareStatement("DELETE FROM cabs WHERE F_ID = ?")) {
+                                    delCabs.setInt(1, fId);
+                                    delCabs.executeUpdate();
+                                }
 
-                    PreparedStatement delPkgTrans = con.prepareStatement("DELETE FROM packages_transports WHERE flight_id = ?");
-                    delPkgTrans.setInt(1, fId);
-                    delPkgTrans.executeUpdate();
+                                try (PreparedStatement delPkgTrans = con.prepareStatement("DELETE FROM packages_transports WHERE flight_id = ?")) {
+                                    delPkgTrans.setInt(1, fId);
+                                    delPkgTrans.executeUpdate();
+                                }
 
-                    PreparedStatement delFlight = con.prepareStatement("DELETE FROM flights WHERE FLIGHT_ID = ?");
-                    delFlight.setInt(1, fId);
-                    int r = delFlight.executeUpdate();
+                                try (PreparedStatement delFlight = con.prepareStatement("DELETE FROM flights WHERE FLIGHT_ID = ?")) {
+                                    delFlight.setInt(1, fId);
+                                    int r = delFlight.executeUpdate();
 
-                    if (r > 0) {
-                        con.commit();
-                        System.out.println("Flight Deleted Successfully!");
-                        if (affectedUsers > 0) {
-                            System.out.println(affectedUsers + " user booking(s) automatically marked as CANCELED.");
+                                    if (r > 0) {
+                                        con.commit();
+                                        System.out.println("Flight Deleted Successfully!");
+                                        if (affectedUsers > 0) {
+                                            System.out.println(affectedUsers + " user booking(s) automatically marked as CANCELED.");
+                                        }
+                                        if (fId - 1 < f.size()) {
+                                            f.remove(fId - 1);
+                                        }
+                                    } else {
+                                        if (!con.getAutoCommit()) con.rollback();
+                                        System.out.println("Failed to Delete Flight.");
+                                    }
+                                }
+                            }
+                        } catch (Exception e) {
+                            if (con != null && !con.getAutoCommit()) {
+                                con.rollback();
+                            }
+                            System.out.println("Error deleting flight: " + e.getMessage());
+                        } finally {
+                            if (con != null) {
+                                con.setAutoCommit(autoCommitState);
+                            }
                         }
-                        if (fId - 1 < f.size()) {
-                            f.remove(fId - 1);
-                        }
+                        break;
                     } else {
-                        con.rollback();
-                        System.out.println("Failed to Delete Flight.");
+                        System.out.println("Invalid Flight Id");
                     }
-                } catch (Exception e) {
-                    con.rollback();
-                    System.out.println("Error deleting flight: " + e.getMessage());
-                } finally {
-                    con.setAutoCommit(autoCommitState);
                 }
-                break;
-            } else {
-                System.out.println("Invalid Flight Id");
             }
         }
     }
@@ -424,22 +484,23 @@ public class Flight extends connection implements Manageable {
         st = new Stack(max);
 
         String sql = "SELECT `Flight_id`, `F_From`, `F_To`, `Boarding_Time`, `Available_Tickets` FROM `flights` WHERE Flight_id = ?";
-        PreparedStatement pst = con.prepareStatement(sql);
-        pst.setInt(1, id);
-        ResultSet rs = pst.executeQuery();
+        try (PreparedStatement pst = con.prepareStatement(sql)) {
+            pst.setInt(1, id);
+            try (ResultSet rs = pst.executeQuery()) {
+                if (rs.next()) {
+                    Timestamp ts = rs.getTimestamp(4);
+                    int date = ts.toLocalDateTime().getDayOfMonth();
+                    String fromStr = rs.getString(2).trim();
+                    String toStr = rs.getString(3).trim();
 
-        if (rs.next()) {
-            Timestamp ts = rs.getTimestamp(4);
-            int date = ts.toLocalDateTime().getDayOfMonth();
-            String fromStr = rs.getString(2).trim();
-            String toStr = rs.getString(3).trim();
+                    char fromChar = !fromStr.isEmpty() ? fromStr.toUpperCase().charAt(0) : 'F';
+                    char toChar = !toStr.isEmpty() ? toStr.toUpperCase().charAt(0) : 'T';
 
-            char fromChar = !fromStr.isEmpty() ? fromStr.toUpperCase().charAt(0) : 'F';
-            char toChar = !toStr.isEmpty() ? toStr.toUpperCase().charAt(0) : 'T';
-
-            String tic = "" + fromChar + toChar + id + date;
-            for (int i = 1; i <= max; i++) {
-                st.push(tic + "/" + i, tickets);
+                    String tic = "" + fromChar + toChar + id + date;
+                    for (int i = 1; i <= max; i++) {
+                        st.push(tic + "/" + i, tickets);
+                    }
+                }
             }
         }
 
@@ -492,14 +553,13 @@ public class Flight extends connection implements Manageable {
             boolean isHeader = true;
 
             boolean autoCommitState = con.getAutoCommit();
-            con.setAutoCommit(false); // Enable batch transaction
+            con.setAutoCommit(false);
 
             DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
 
             while ((line = br.readLine()) != null) {
                 if (line.isBlank()) continue;
 
-                // Skip header row
                 if (isHeader) {
                     isHeader = false;
                     continue;
