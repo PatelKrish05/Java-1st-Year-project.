@@ -4,31 +4,48 @@ import JDBC.connection;
 import Travel_Booking_System.Methods;
 
 import java.sql.*;
-import java.util.Scanner;
 
 public class Cab extends connection implements Manageable {
-    String from = "", to = "", b_Type = "";
-    int choice, bID;
-    Scanner sc = new Scanner(System.in);
+    Timestamp departure = null;
+    int with_id = 0, choice = 0;
+    String with = "";
 
     @Override
     public void view() throws Exception {
+        // Fetch standard columns directly
+        String sql = "SELECT Cab_id, Departure_Time, Max_Passenger, Availability, Price, F_id, T_id, B_id FROM cabs";
+
         Statement stmt = con.createStatement();
-        ResultSet rs = stmt.executeQuery("SELECT * FROM cabs");
+        ResultSet rs = stmt.executeQuery(sql);
 
         System.out.println("--------------------------------------------------------------------------------------------------------");
-        System.out.println("Cab ID\tWith\tWith ID\tDeparture\t\tMax Pass.\tAvailable\tPrice");
+        System.out.println("Cab ID\tWith\t\tDeparture Time\t\tMax Pass.\tAvailability\tPrice");
         System.out.println("--------------------------------------------------------------------------------------------------------");
 
         while (rs.next()) {
+            int cabId = rs.getInt("Cab_id");
+            Timestamp depTime = rs.getTimestamp("Departure_Time");
+            int maxPass = rs.getInt("Max_Passenger");
+            int avail = rs.getInt("Availability");
+            double price = rs.getDouble("Price");
+
+            // Simple Java if-else to determine the "With" text
+            String with = "None";
+            if (rs.getObject("F_id") != null) {
+                with = "Flight (ID: " + rs.getInt("F_id") + ")";
+            } else if (rs.getObject("T_id") != null) {
+                with = "Train (ID: " + rs.getInt("T_id") + ")";
+            } else if (rs.getObject("B_id") != null) {
+                with = "Bus (ID: " + rs.getInt("B_id") + ")";
+            }
+
             System.out.println(
-                    rs.getInt(1) + "\t" +
-                            rs.getString(2) + "\t" +
-                            rs.getInt(3) + "\t" +
-                            rs.getTimestamp(4) + "\t" +
-                            rs.getInt(5) + "\t\t" +
-                            rs.getInt(6) + "\t\t$" +
-                            rs.getDouble("price")
+                    cabId + "\t" +
+                            with + (with.length() < 12 ? "\t\t" : "\t") +
+                            depTime + "\t" +
+                            maxPass + "\t\t" +
+                            avail + "\t\t$" +
+                            price
             );
         }
 
@@ -40,9 +57,6 @@ public class Cab extends connection implements Manageable {
 
     @Override
     public void add() throws Exception {
-        Timestamp departure = null;
-        int with_id = 0, choice = 0;
-        String with = "";
 
         while (true) {
             System.out.println("\nCab For :-");
@@ -135,7 +149,7 @@ public class Cab extends connection implements Manageable {
         int ava = new Methods().readValidInt("Availability : ");
         int price = new Methods().readValidInt("Price : ");
 
-        String sql = "INSERT INTO `cabs`(`Departure_Time`, `Max_Passenger`, `Availability`, `price`, `" + with + "`) " +
+        String sql = "INSERT INTO `cabs`(`Departure_Time`, `Max_Passenger`, `Availability`, `Price`, `" + with + "`) " +
                 "VALUES (?,?,?,?,?)";
         PreparedStatement pt = con.prepareStatement(sql);
         pt.setTimestamp(1, departure);
@@ -157,7 +171,7 @@ public class Cab extends connection implements Manageable {
             cID = new Methods().readValidInt("Enter Cab ID to Edit (or 0 to cancel): ");
             if (cID == 0) return;
 
-            String sql = "SELECT `Cab_id`, `Max_Passenger`, `Availability`, `price` FROM CABS WHERE CAB_ID = ?";
+            String sql = "SELECT `Cab_id`, `Max_Passenger`, `Availability`, `Price` FROM cabs WHERE Cab_id = ?";
             PreparedStatement pst = con.prepareStatement(sql);
             pst.setInt(1, cID);
             ResultSet rs = pst.executeQuery();
@@ -197,7 +211,7 @@ public class Cab extends connection implements Manageable {
                         }
                     }
 
-                    String fSql = "UPDATE `CABS` SET `" + rsm.getColumnName(col) + "` = ? WHERE CAB_ID = ?";
+                    String fSql = "UPDATE `cabs` SET `" + rsm.getColumnName(col) + "` = ? WHERE Cab_id = ?";
                     PreparedStatement uSt = con.prepareStatement(fSql);
                     uSt.setString(1, n);
                     uSt.setInt(2, cID);
